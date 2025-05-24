@@ -1,4 +1,5 @@
 package com.pnutdownloader
+import com.oblador.vectoricons.VectorIconsPackage;
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
