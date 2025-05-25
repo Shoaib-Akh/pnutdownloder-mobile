@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "792018377862",
-    "project_id": "pnut-downloder",
-    "storage_bucket": "pnut-downloder.firebasestorage.app"
+    "project_number": "74444910542",
+    "project_id": "android-pnut",
+    "storage_bucket": "android-pnut.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:792018377862:android:a25a25bc699e6fbdf38507",
+        "mobilesdk_app_id": "1:74444910542:android:a6a27cc7713d13abf0c59f",
         "android_client_info": {
           "package_name": "com.pnutdownloader"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyCe7tm1aYPYsg0ajC0yYtA3jpim28JBNGQ"
+          "current_key": "AIzaSyBdVda-Dsk7Z6TV5Z5mZAqrobbbmvc8YMg"
         }
       ],
       "services": {
