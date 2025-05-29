@@ -110,6 +110,8 @@ android {
 }
 
 dependencies {
+        implementation project(':react-native-fs')
+
     implementation("com.google.firebase:firebase-analytics")
     implementation(platform("com.google.firebase:firebase-bom:33.14.0"))
     // The version of react-native is set by the React Native Gradle Plugin
