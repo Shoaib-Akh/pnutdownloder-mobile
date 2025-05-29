@@ -12,12 +12,15 @@ import {
   ActivityIndicator,
   Platform,
   Linking,
+  NativeModules
 } from 'react-native';
 import axios from 'axios';
 import RNFS from 'react-native-fs';
 import { check, request, PERMISSIONS, RESULTS, openSettings } from 'react-native-permissions';
 import base64 from 'react-native-base64';
 const DownloadScreen = ({ route }) => {
+  const { PythonModule } = NativeModules;
+
   const { downloadedUrl } = route.params || {};
   const [videoData, setVideoData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -104,175 +107,213 @@ const DownloadScreen = ({ route }) => {
   };
 
   useEffect(() => {
-    const fetchVideoData = async () => {
-      if (!downloadedUrl) {
-        setError('No video URL provided');
-        setLoading(false);
-        return;
-      }
+    // const fetchVideoData = async () => {
+    //   if (!downloadedUrl) {
+    //     setError('No video URL provided');
+    //     setLoading(false);
+    //     return;
+    //   }
 
-      try {
-        const videoId = extractVideoId(downloadedUrl);
-        if (!videoId) {
-          setError('Invalid YouTube URL');
-          setLoading(false);
-          return;
+    //   try {
+    //     const videoId = extractVideoId(downloadedUrl);
+    //     if (!videoId) {
+    //       setError('Invalid YouTube URL');
+    //       setLoading(false);
+    //       return;
+    //     }
+
+    //     setLoading(true);
+    //     const response = await axios.post(`${BACKEND_URL}/video-info`, { url: downloadedUrl });
+    //     if (response.data.items?.length > 0) {
+    //       setVideoData(response.data.items[0]);
+    //     } else {
+    //       setError('Video not found');
+    //     }
+    //   } catch (err) {
+    //     console.error('Error fetching video data:', err);
+    //     setError('Failed to load video data. Please try again.');
+    //   } finally {
+    //     setLoading(false);
+    //   }
+    // };
+const fetchVideoData = async () => {
+  if (!downloadedUrl) {
+    setError('No video URL provided');
+    setLoading(false);
+    return;
+  }
+
+  try {
+    setLoading(true);
+    const result = await PythonModule.getVideoInfo(downloadedUrl);
+    console.log("resultresult",result);
+    
+    const data = JSON.parse(result);
+    if (data.error) {
+      setError(data.error);
+    } else {
+      setVideoData({
+        snippet: {
+          title: data.title,
+          channelTitle: data.channel,
+          thumbnails: {
+            medium: { url: data.thumbnail }
+          }
+        },
+        statistics: {
+          viewCount: data.view_count.toString()
+        },
+        contentDetails: {
+          duration: `PT${Math.floor(data.duration/60)}M${data.duration%60}S`
         }
-
-        setLoading(true);
-        const response = await axios.post(`${BACKEND_URL}/video-info`, { url: downloadedUrl });
-        if (response.data.items?.length > 0) {
-          setVideoData(response.data.items[0]);
-        } else {
-          setError('Video not found');
-        }
-      } catch (err) {
-        console.error('Error fetching video data:', err);
-        setError('Failed to load video data. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
+      });
+    }
+  } catch (err) {
+    console.error('Error fetching video data:', err);
+    setError('Failed to load video data. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+};
     fetchVideoData();
   }, [downloadedUrl]);
 
 
-const handleDownload = async (formatType, quality) => {
-  if (isDownloading) {
-    console.log('Download already in progress');
-    Alert.alert('Info', 'A download is already in progress.');
-    return;
-  }
+// const handleDownload = async (formatType, quality) => {
+//   if (isDownloading) {
+//     console.log('Download already in progress');
+//     Alert.alert('Info', 'A download is already in progress.');
+//     return;
+//   }
 
-  // Step 1: Check permissions
-  console.log('Checking storage permissions...');
-  const hasPermission = await requestStoragePermission();
-  if (!hasPermission) {
-    console.log('Permission denied, aborting download');
-    Alert.alert('Permission Denied', 'Storage permission is required to save files. Please enable it in Settings.', [
-      { text: 'Open Settings', onPress: () => openSettings() },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-    return;
-  }
-  console.log('Storage permissions granted');
+//   // Step 1: Check permissions
+//   console.log('Checking storage permissions...');
+//   const hasPermission = await requestStoragePermission();
+//   if (!hasPermission) {
+//     console.log('Permission denied, aborting download');
+//     Alert.alert('Permission Denied', 'Storage permission is required to save files. Please enable it in Settings.', [
+//       { text: 'Open Settings', onPress: () => openSettings() },
+//       { text: 'Cancel', style: 'cancel' },
+//     ]);
+//     return;
+//   }
+//   console.log('Storage permissions granted');
 
-  setIsDownloading(true);
-  setCurrentDownload({ formatType, quality });
-  setDownloadProgress(0);
-  progressAnim.setValue(0);
+//   setIsDownloading(true);
+//   setCurrentDownload({ formatType, quality });
+//   setDownloadProgress(0);
+//   progressAnim.setValue(0);
 
-  try {
-    // Step 2: Set up folder and file path
-    const folderName = 'PNutDownloader';
-    const folderPath = Platform.OS === 'android'
-      ? `${RNFS.DownloadDirectoryPath}/${folderName}`
-      : `${RNFS.DocumentDirectoryPath}/${folderName}`;
-    console.log('Target folder path:', folderPath);
+//   try {
+//     // Step 2: Set up folder and file path
+//     const folderName = 'PNutDownloader';
+//     const folderPath = Platform.OS === 'android'
+//       ? `${RNFS.DownloadDirectoryPath}/${folderName}`
+//       : `${RNFS.DocumentDirectoryPath}/${folderName}`;
+//     console.log('Target folder path:', folderPath);
 
-    // Create folder if it doesn't exist
-    const folderExists = await RNFS.exists(folderPath);
-    console.log('Folder exists:', folderExists);
-    if (!folderExists) {
-      console.log('Creating folder:', folderPath);
-      await RNFS.mkdir(folderPath).catch(err => {
-        console.error('Folder creation error:', err);
-        throw new Error('Failed to create folder');
-      });
-      console.log('Folder created successfully');
-    }
+//     // Create folder if it doesn't exist
+//     const folderExists = await RNFS.exists(folderPath);
+//     console.log('Folder exists:', folderExists);
+//     if (!folderExists) {
+//       console.log('Creating folder:', folderPath);
+//       await RNFS.mkdir(folderPath).catch(err => {
+//         console.error('Folder creation error:', err);
+//         throw new Error('Failed to create folder');
+//       });
+//       console.log('Folder created successfully');
+//     }
 
-    // Generate safe file name
-    const sanitizeFileName = (name) => name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const fileExtension = formatType === 'video' ? 'mp4' : 'mp3';
-    const fileName = `${sanitizeFileName(videoData?.snippet?.title || 'video')}_${Date.now()}.${fileExtension}`;
-    const filePath = `${folderPath}/${fileName}`;
-    console.log('Target file path:', filePath);
+//     // Generate safe file name
+//     const sanitizeFileName = (name) => name.replace(/[^a-zA-Z0-9._-]/g, '_');
+//     const fileExtension = formatType === 'video' ? 'mp4' : 'mp3';
+//     const fileName = `${sanitizeFileName(videoData?.snippet?.title || 'video')}_${Date.now()}.${fileExtension}`;
+//     const filePath = `${folderPath}/${fileName}`;
+//     console.log('Target file path:', filePath);
 
-    // Step 3: Download file using axios POST
-    const BACKEND_URL = Platform.OS === 'android' ? 'http://10.0.2.2:5001' : 'http://192.168.1.4:5001';
-    const downloadUrl = `${BACKEND_URL}/download`;
-    console.log('Sending POST request to:', downloadUrl);
-    console.log('Request body:', { url: downloadedUrl, format_type: formatType, quality });
+//     // Step 3: Download file using axios POST
+//     const BACKEND_URL = Platform.OS === 'android' ? 'http://10.0.2.2:5001' : 'http://192.168.1.4:5001';
+//     const downloadUrl = `${BACKEND_URL}/download`;
+//     console.log('Sending POST request to:', downloadUrl);
+//     console.log('Request body:', { url: downloadedUrl, format_type: formatType, quality });
 
-    const response = await axios.post(
-      downloadUrl,
-      { url: downloadedUrl, format_type: formatType, quality },
-      {
-        responseType: 'arraybuffer',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        onDownloadProgress: (progressEvent) => {
-          if (progressEvent.total) {
-            const progress = Math.round((progressEvent.loaded / progressEvent.total) * 100);
-            console.log('Download progress:', progress, '%');
-            setDownloadProgress(progress);
-            Animated.timing(progressAnim, {
-              toValue: progress / 100,
-              duration: 200,
-              useNativeDriver: false,
-            }).start();
-          }
-        },
-      }
-    );
+//     const response = await axios.post(
+//       downloadUrl,
+//       { url: downloadedUrl, format_type: formatType, quality },
+//       {
+//         responseType: 'arraybuffer',
+//         headers: {
+//           'Content-Type': 'application/json',
+//         },
+//         onDownloadProgress: (progressEvent) => {
+//           if (progressEvent.total) {
+//             const progress = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+//             console.log('Download progress:', progress, '%');
+//             setDownloadProgress(progress);
+//             Animated.timing(progressAnim, {
+//               toValue: progress / 100,
+//               duration: 200,
+//               useNativeDriver: false,
+//             }).start();
+//           }
+//         },
+//       }
+//     );
 
-    console.log('Response status:', response.status);
-    console.log('Response data length:', response.data.length);
-    if (response.status !== 200) {
-      throw new Error(`Download failed with status ${response.status}`);
-    }
-    if (!response.data || response.data.length === 0) {
-      throw new Error('Received empty response data');
-    }
+//     console.log('Response status:', response.status);
+//     console.log('Response data length:', response.data.length);
+//     if (response.status !== 200) {
+//       throw new Error(`Download failed with status ${response.status}`);
+//     }
+//     if (!response.data || response.data.length === 0) {
+//       throw new Error('Received empty response data');
+//     }
 
-    // Step 4: Write file to storage
-    console.log('Writing file to:', filePath);
-    const base64Data = base64.encodeFromByteArray(new Uint8Array(response.data));
-    await RNFS.writeFile(filePath, base64Data, 'base64').catch(err => {
-      console.error('File write error:', err);
-      throw new Error('Failed to write file');
-    });
-    console.log('File written successfully');
+//     // Step 4: Write file to storage
+//     console.log('Writing file to:', filePath);
+//     const base64Data = base64.encodeFromByteArray(new Uint8Array(response.data));
+//     await RNFS.writeFile(filePath, base64Data, 'base64').catch(err => {
+//       console.error('File write error:', err);
+//       throw new Error('Failed to write file');
+//     });
+//     console.log('File written successfully');
 
-    // Step 5: Verify file exists
-    const fileExists = await RNFS.exists(filePath);
-    console.log('File exists after download:', fileExists);
-    if (!fileExists) {
-      throw new Error('File was not saved to the specified path');
-    }
+//     // Step 5: Verify file exists
+//     const fileExists = await RNFS.exists(filePath);
+//     console.log('File exists after download:', fileExists);
+//     if (!fileExists) {
+//       throw new Error('File was not saved to the specified path');
+//     }
 
-    // Step 6: Register file in media store (Android)
-    if (Platform.OS === 'android') {
-      console.log('Scanning file for media store:', filePath);
-      await RNFS.scanFile(filePath).catch(err => {
-        console.error('Media scan error:', err);
-        Alert.alert('Warning', 'File saved but may not appear in gallery/downloads.');
-      });
-      console.log('File scanned successfully');
-    }
+//     // Step 6: Register file in media store (Android)
+//     if (Platform.OS === 'android') {
+//       console.log('Scanning file for media store:', filePath);
+//       await RNFS.scanFile(filePath).catch(err => {
+//         console.error('Media scan error:', err);
+//         Alert.alert('Warning', 'File saved but may not appear in gallery/downloads.');
+//       });
+//       console.log('File scanned successfully');
+//     }
 
-    // Step 7: Notify user
-    const saveLocation = Platform.OS === 'android' ? `Downloads/${folderName}/${fileName}` : `${folderName}/${fileName}`;
-    console.log('File saved to:', saveLocation);
-    Alert.alert('Download Complete', `File saved to: ${saveLocation}`, [
-      { text: 'OK' },
-      Platform.OS === 'ios' && {
-        text: 'Open',
-        onPress: () => Linking.openURL(`file://${filePath}`).catch(err => console.error('Failed to open file:', err)),
-      },
-    ]);
-  } catch (err) {
-    console.error('Download error:', err.message, err.stack);
-    Alert.alert('Error', `Failed to save file: ${err.message}. Please check your network or try again.`);
-  } finally {
-    console.log('Download process complete, resetting state');
-    setIsDownloading(false);
-    setCurrentDownload(null);
-  }
-};
+//     // Step 7: Notify user
+//     const saveLocation = Platform.OS === 'android' ? `Downloads/${folderName}/${fileName}` : `${folderName}/${fileName}`;
+//     console.log('File saved to:', saveLocation);
+//     Alert.alert('Download Complete', `File saved to: ${saveLocation}`, [
+//       { text: 'OK' },
+//       Platform.OS === 'ios' && {
+//         text: 'Open',
+//         onPress: () => Linking.openURL(`file://${filePath}`).catch(err => console.error('Failed to open file:', err)),
+//       },
+//     ]);
+//   } catch (err) {
+//     console.error('Download error:', err.message, err.stack);
+//     Alert.alert('Error', `Failed to save file: ${err.message}. Please check your network or try again.`);
+//   } finally {
+//     console.log('Download process complete, resetting state');
+//     setIsDownloading(false);
+//     setCurrentDownload(null);
+//   }
+// };
   // Helper function to convert blob to base64
   const blobToBase64 = (blob) => {
     return new Promise((resolve, reject) => {
@@ -285,7 +326,54 @@ const handleDownload = async (formatType, quality) => {
       reader.readAsDataURL(blob);
     });
   };
+const handleDownload = async (formatType, quality) => {
+  if (isDownloading) {
+    Alert.alert('Info', 'A download is already in progress.');
+    return;
+  }
 
+  const hasPermission = await requestStoragePermission();
+  if (!hasPermission) return;
+
+  setIsDownloading(true);
+  setCurrentDownload({ formatType, quality });
+  setDownloadProgress(0);
+  progressAnim.setValue(0);
+
+  try {
+    const result = await PythonModule.downloadVideo(downloadedUrl, formatType, quality);
+    
+    // No need to parse if your Python code already returns a stringified JSON
+    const data = JSON.parse(result);
+    
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    if (Platform.OS === 'android') {
+      await RNFS.scanFile(data.filepath);
+    }
+
+    Alert.alert(
+      'Download Complete',
+      `${data.title} saved successfully!`,
+      [
+        { text: 'OK' },
+        {
+          text: 'Open File',
+          onPress: () => Linking.openURL(`file://${data.filepath}`)
+        }
+      ]
+    );
+  } catch (err) {
+    console.log("err",err);
+    
+    Alert.alert('Error', err.message);
+  } finally {
+    setIsDownloading(false);
+    setCurrentDownload(null);
+  }
+};
   const videoQualities = [
     { quality: '1920p', premium: true },
     { quality: '1280p', premium: false },

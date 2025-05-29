@@ -3,6 +3,7 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"
 apply plugin: 'com.google.gms.google-services' // <- Add this line
+apply plugin: 'com.chaquo.python'
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -78,7 +79,18 @@ android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
+ defaultConfig {
+        python {
 
+            version "3.8" // Python version
+            pip {
+                install "numpy"
+                install "yt-dlp"
+                install "requests"
+                install "ffmpeg-python"
+            }
+        }
+    }
     namespace "com.pnutdownloader"
     defaultConfig {
         applicationId "com.pnutdownloader"
@@ -86,6 +98,9 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+        }
     }
     signingConfigs {
         debug {
