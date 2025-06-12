@@ -15,13 +15,25 @@ class YoutubeDownloader:
             ydl_opts = {'quiet': True}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
+                
+                # Extract available formats with height information
+                formats = []
+                for fmt in info.get('formats', []):
+                    if fmt.get('height'):
+                        formats.append({
+                            'height': fmt['height'],
+                            'ext': fmt.get('ext', ''),
+                            'format_note': fmt.get('format_note', ''),
+                            'url': fmt.get('url', '')
+                        })
+                
                 return {
                     'title': info.get('title', ''),
                     'duration': info.get('duration', 0),
                     'thumbnail': info.get('thumbnail', ''),
                     'channel': info.get('uploader', ''),
                     'view_count': info.get('view_count', 0),
-                    'formats': info.get('formats', [])
+                    'formats': formats
                 }
         except Exception as e:
             return {'error': str(e)}
@@ -52,10 +64,6 @@ class YoutubeDownloader:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 filepath = ydl.prepare_filename(info)
-                
-                if format_type == 'audio':
-                    filepath = filepath.replace('.m4a', '.mp3').replace('.webm', '.mp3')
-                
                 return {
                     'filepath': filepath,
                     'filename': os.path.basename(filepath),
@@ -65,26 +73,21 @@ class YoutubeDownloader:
             return {'error': str(e)}
 
     def _get_video_format(self, quality):
-        """Return the appropriate video format string based on quality"""
+        """Return video format based on height (quality)"""
         quality_map = {
-            '1920p': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            '1280p': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            '852p': 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            '640p': 'bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            '426p': 'bestvideo[height<=240][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            '256p': 'bestvideo[height<=144][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            '1080p': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+            '720p': 'bestvideo[height<=720]+bestaudio/best[height<=720]',
+            '480p': 'bestvideo[height<=480]+bestaudio/best[height<=480]',
+            '360p': 'bestvideo[height<=360]+bestaudio/best[height<=360]',
+            '240p': 'bestvideo[height<=240]+bestaudio/best[height<=240]',
+            '144p': 'bestvideo[height<=144]+bestaudio/best[height<=144]',
         }
-        return quality_map.get(quality, 'best')
+        return quality_map.get(quality, 'bestvideo+bestaudio/best')
 
     def _get_audio_format(self, quality):
-        """Return audio format options"""
+        """Return audio format without FFmpeg (no conversion)"""
         return {
-            'format': 'bestaudio',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': quality.replace('kbps', ''),
-            }]
+            'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]'
         }
 
     def _progress_hook(self, d):
@@ -98,7 +101,8 @@ class YoutubeDownloader:
                 pass
 
 
-# Helper functions for React Native integration
+# 🔧 Helper functions for React Native via Chaquopy
+
 def get_video_info(url):
     downloader = YoutubeDownloader()
     result = downloader.get_video_info(url)

@@ -87,7 +87,7 @@ android {
                 install "numpy"
                 install "yt-dlp"
                 install "requests"
-                install "ffmpeg-python"
+               
             }
         }
     }
