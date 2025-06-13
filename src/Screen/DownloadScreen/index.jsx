@@ -354,10 +354,9 @@ const handleDownload = async (formatType, quality) => {
     );
     
     const data = JSON.parse(result);
+    console.log("datadatadata",data);
     
-    if (data.error) {
-      throw new Error(data.error);
-    }
+   
 
     if (Platform.OS === 'android') {
       await RNFS.scanFile(data.filepath);

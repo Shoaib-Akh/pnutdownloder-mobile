@@ -4,19 +4,26 @@ import {
   TextInput,
   StyleSheet,
   TouchableOpacity,
-  Keyboard,
+  Alert,
+  Platform,
+  ToastAndroid,
+  NativeModules,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import IonIcon from 'react-native-vector-icons/Ionicons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import RNFS from 'react-native-fs';
+import CookieManager from '@react-native-cookies/cookies';
 
 const Browser = ({ route, navigation }) => {
   const webviewRef = useRef(null);
   const initialUrl = route.params?.url || 'https://m.youtube.com/';
   const [url, setUrl] = useState(initialUrl);
   const [inputUrl, setInputUrl] = useState(initialUrl);
-  const [canGoBack, setCanGoBack] = useState(false); // Track back navigation state
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [cookies, setCookies] = useState('');
+  const [isYouTube, setIsYouTube] = useState(true);
 
   useEffect(() => {
     if (route.params?.url) {
@@ -31,47 +38,105 @@ const Browser = ({ route, navigation }) => {
     setInputUrl(finalUrl); // Ensure inputUrl is updated
   };
 
-  // Update inputUrl when WebView navigates to a new URL
   const handleNavigationStateChange = (navState) => {
-    setInputUrl(navState.url); // Update TextInput with the current WebView URL
-    setCanGoBack(navState.canGoBack); // Update back button state
-    setUrl(navState.url); // Ensure url state is in sync
-  };
+    const newUrl = navState.url || url;
+    setInputUrl(newUrl);
+    setCanGoBack(navState.canGoBack);
+    setUrl(newUrl);
+    setIsYouTube(isYouTubeUrl(newUrl));
 
-  const goBack = () => {
-    if (canGoBack) {
-      webviewRef.current?.goBack();
+    if (webviewRef.current) {
+      webviewRef.current.injectJavaScript(`
+        (function() {
+          try {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'cookies',
+              data: document.cookie
+            }));
+          } catch(e) {
+            console.error('Cookie error:', e.message);
+          }
+        })();
+        true;
+      `);
     }
   };
 
-  const goForward = () => {
-    webviewRef.current?.goForward();
+  const onMessage = (event) => {
+    try {
+      const message = JSON.parse(event.nativeEvent.data);
+      if (message.type === 'cookies') {
+        setCookies(message.data);
+      }
+    } catch (e) {
+      console.error('Failed to parse message:', e);
+    }
   };
 
-  const reload = () => {
-    webviewRef.current?.reload();
+  
+
+
+
+
+  const saveAllCookiesToFile = async () => {
+  try {
+    const nativeCookies = await CookieManager.get(url); // or hardcode 'https://youtube.com'
+    console.log("nativeCookies",nativeCookies);
+
+  await NativeModules.PythonModule.setCookies(cookies);
+
+    const formattedCookies = Object.entries(nativeCookies).map(([name, obj]) => {
+      return [
+        obj.domain || '.youtube.com',
+        obj.hostOnly ? 'FALSE' : 'TRUE',
+        obj.path || '/',
+        obj.secure ? 'TRUE' : 'FALSE',
+        obj.expires ? Math.floor(new Date(obj.expires).getTime() / 1000) : Math.floor(Date.now() / 1000) + 7 * 24 * 3600,
+        name,
+        obj.value
+      ].join('\t');
+    }).join('\n');
+
+    const downloadsPath = `${RNFS.DownloadDirectoryPath}/youtube_all_cookies.txt`;
+    await RNFS.writeFile(downloadsPath, formattedCookies, 'utf8');
+    showMessage(`All cookies saved!`);
+  } catch (error) {
+    console.error(error);
+    showMessage('Error saving all cookies');
+  }
+};
+  const showMessage = (message) => {
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(message, ToastAndroid.LONG);
+    } else {
+      Alert.alert(message);
+    }
   };
-    const finalUrl = url.startsWith('http') ? url : `https://${url}`;
+
+  const goBack = () => webviewRef.current?.goBack();
+  const goForward = () => webviewRef.current?.goForward();
+  const reload = () => webviewRef.current?.reload();
 
 const isYouTubeUrl = (link) => {
 const result = /youtu(be\.com\/(watch|shorts)|m\.youtube\.com\/shorts)/i.test(link);
 return result;};
 
-const handleDownload = () => {
-  if (isYouTubeUrl(url)) {
-    navigation.navigate('Download', { downloadedUrl: url });
-  } else {
-    alert('Only YouTube URLs can be downloaded.');
-  }
-};
+  const handleDownload = () => {
+    if (isYouTubeUrl(url)) {
+      navigation.navigate('Download', { downloadedUrl: url });
+    } else {
+      showMessage('Only YouTube URLs can be downloaded');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Top Bar */}
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => {
-          setUrl('https://m.youtube.com');
-          setInputUrl('https://m.youtube.com');
+          const homeUrl = 'https://m.youtube.com';
+          setUrl(homeUrl);
+          setInputUrl(homeUrl);
+          setIsYouTube(true);
         }}>
           <IonIcon name="home" size={24} color="#fff" />
         </TouchableOpacity>
@@ -88,7 +153,6 @@ const handleDownload = () => {
           <IonIcon name="chevron-forward" size={24} color="#fff" />
         </TouchableOpacity>
 
-        {/* Search Bar */}
         <View style={styles.searchBox}>
           <IonIcon name="search" size={16} color="#ccc" style={{ marginRight: 6 }} />
           <TextInput
@@ -107,44 +171,58 @@ const handleDownload = () => {
         <TouchableOpacity onPress={reload}>
           <IonIcon name="reload" size={22} color="#fff" />
         </TouchableOpacity>
-
-        <TouchableOpacity>
-          <IonIcon name="bookmark-outline" size={24} color="#fff" />
-        </TouchableOpacity>
       </View>
 
-      {/* WebView */}
       <View style={{ flex: 1 }}>
         <WebView
           ref={webviewRef}
           source={{ uri: url }}
           style={styles.webview}
           onNavigationStateChange={handleNavigationStateChange}
-          onLoadProgress={({ nativeEvent }) => {
-            // Fallback to update inputUrl during loading
-            if (nativeEvent.url !== inputUrl) {
-              setInputUrl(nativeEvent.url);
-              setUrl(nativeEvent.url);
-            }
-          }}
+          onMessage={onMessage}
+          injectedJavaScript={`
+            (function() {
+              function sendCookies() {
+                try {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'cookies',
+                    data: document.cookie
+                  }));
+                } catch(e) {
+                  console.error('Cookie error:', e.message);
+                }
+              }
+              sendCookies();
+              setInterval(sendCookies, 3000);
+              true;
+            })();
+          `}
         />
-        {isYouTubeUrl(url) &&
-        <View style={{position:"absolute",bottom:80,left:30}}>
-           <TouchableOpacity style={{backgroundColor:"#BB4F28",padding:20,borderRadius:20}}
-           onPress={handleDownload}
-           >
-          <MaterialCommunityIcons name="download" size={24} color="white" />
-        </TouchableOpacity>
-        </View>
-        }
         
+        {isYouTube && (
+          <View style={styles.floatingButtons}>
+            <TouchableOpacity
+              style={[styles.floatingButton, { backgroundColor: "#FF0000" }]}
+              onPress={handleDownload}
+            >
+              <MaterialCommunityIcons name="download" size={24} color="white" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.floatingButton, { backgroundColor: "#4CAF50" }]}
+              onPress={saveAllCookiesToFile}
+            >
+              <MaterialCommunityIcons name="cookie" size={24} color="white" />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#ffffff' },
+  container: { flex: 1, backgroundColor: '#1e1e1e' },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -168,6 +246,20 @@ const styles = StyleSheet.create({
   },
   webview: {
     flex: 1,
+  },
+  floatingButtons: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    gap: 15,
+  },
+  floatingButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
   },
 });
 
