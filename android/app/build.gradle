@@ -84,7 +84,6 @@ android {
 
             version "3.8" // Python version
             pip {
-                install "numpy"
                 install "yt-dlp"
                 install "requests"
                

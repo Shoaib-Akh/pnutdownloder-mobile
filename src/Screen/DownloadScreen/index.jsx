@@ -341,9 +341,18 @@ const handleDownload = async (formatType, quality) => {
   progressAnim.setValue(0);
 
   try {
-    const result = await PythonModule.downloadVideo(downloadedUrl, formatType, quality);
+    const downloadDir = `${RNFS.ExternalDirectoryPath}/PNutDownloader`;
+    if (!await RNFS.exists(downloadDir)) {
+      await RNFS.mkdir(downloadDir);
+    }
+
+    const result = await PythonModule.downloadVideo(
+      downloadedUrl, 
+      formatType, 
+      quality,
+      downloadDir
+    );
     
-    // No need to parse if your Python code already returns a stringified JSON
     const data = JSON.parse(result);
     
     if (data.error) {
@@ -366,14 +375,23 @@ const handleDownload = async (formatType, quality) => {
       ]
     );
   } catch (err) {
-    console.log("err",err);
+    console.log("Download error:", err);
     
-    Alert.alert('Error', err.message);
+    let errorMessage = 'Download failed';
+    if (err.message.includes('requested format not available')) {
+      errorMessage = 'The requested format is not available for direct download';
+    } else if (err.message) {
+      errorMessage = err.message;
+    }
+
+    Alert.alert('Error', errorMessage);
   } finally {
     setIsDownloading(false);
     setCurrentDownload(null);
   }
 };
+
+
   const videoQualities = [
     { quality: '1920p', premium: true },
     { quality: '1280p', premium: false },
