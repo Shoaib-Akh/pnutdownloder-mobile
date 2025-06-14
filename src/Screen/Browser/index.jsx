@@ -121,13 +121,24 @@ const isYouTubeUrl = (link) => {
 const result = /youtu(be\.com\/(watch|shorts)|m\.youtube\.com\/shorts)/i.test(link);
 return result;};
 
-  const handleDownload = () => {
-    if (isYouTubeUrl(url)) {
-      navigation.navigate('Download', { downloadedUrl: url });
-    } else {
-      showMessage('Only YouTube URLs can be downloaded');
-    }
-  };
+  const handleDownload = async () => {
+  if (!isYouTubeUrl(url)) {
+    showMessage('Only YouTube URLs can be downloaded');
+    return;
+  }
+
+  try {
+    // First save the cookies
+    await saveAllCookiesToFile();
+    
+    // Then navigate to the Download screen
+    navigation.navigate('Download', { downloadedUrl: url });
+  } catch (error) {
+    console.error('Error in handleDownload:', error);
+    showMessage('Error preparing download');
+  }
+};
+
 
   return (
     <SafeAreaView style={styles.container}>
@@ -208,12 +219,12 @@ return result;};
               <MaterialCommunityIcons name="download" size={24} color="white" />
             </TouchableOpacity>
 
-            <TouchableOpacity
+            {/* <TouchableOpacity
               style={[styles.floatingButton, { backgroundColor: "#4CAF50" }]}
               onPress={saveAllCookiesToFile}
             >
               <MaterialCommunityIcons name="cookie" size={24} color="white" />
-            </TouchableOpacity>
+            </TouchableOpacity> */}
           </View>
         )}
       </View>
