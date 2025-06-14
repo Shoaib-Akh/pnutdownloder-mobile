@@ -179,143 +179,6 @@ const fetchVideoData = async () => {
   }, [downloadedUrl]);
 
 
-// const handleDownload = async (formatType, quality) => {
-//   if (isDownloading) {
-//     console.log('Download already in progress');
-//     Alert.alert('Info', 'A download is already in progress.');
-//     return;
-//   }
-
-//   // Step 1: Check permissions
-//   console.log('Checking storage permissions...');
-//   const hasPermission = await requestStoragePermission();
-//   if (!hasPermission) {
-//     console.log('Permission denied, aborting download');
-//     Alert.alert('Permission Denied', 'Storage permission is required to save files. Please enable it in Settings.', [
-//       { text: 'Open Settings', onPress: () => openSettings() },
-//       { text: 'Cancel', style: 'cancel' },
-//     ]);
-//     return;
-//   }
-//   console.log('Storage permissions granted');
-
-//   setIsDownloading(true);
-//   setCurrentDownload({ formatType, quality });
-//   setDownloadProgress(0);
-//   progressAnim.setValue(0);
-
-//   try {
-//     // Step 2: Set up folder and file path
-//     const folderName = 'PNutDownloader';
-//     const folderPath = Platform.OS === 'android'
-//       ? `${RNFS.DownloadDirectoryPath}/${folderName}`
-//       : `${RNFS.DocumentDirectoryPath}/${folderName}`;
-//     console.log('Target folder path:', folderPath);
-
-//     // Create folder if it doesn't exist
-//     const folderExists = await RNFS.exists(folderPath);
-//     console.log('Folder exists:', folderExists);
-//     if (!folderExists) {
-//       console.log('Creating folder:', folderPath);
-//       await RNFS.mkdir(folderPath).catch(err => {
-//         console.error('Folder creation error:', err);
-//         throw new Error('Failed to create folder');
-//       });
-//       console.log('Folder created successfully');
-//     }
-
-//     // Generate safe file name
-//     const sanitizeFileName = (name) => name.replace(/[^a-zA-Z0-9._-]/g, '_');
-//     const fileExtension = formatType === 'video' ? 'mp4' : 'mp3';
-//     const fileName = `${sanitizeFileName(videoData?.snippet?.title || 'video')}_${Date.now()}.${fileExtension}`;
-//     const filePath = `${folderPath}/${fileName}`;
-//     console.log('Target file path:', filePath);
-
-//     // Step 3: Download file using axios POST
-//     const BACKEND_URL = Platform.OS === 'android' ? 'http://10.0.2.2:5001' : 'http://192.168.1.4:5001';
-//     const downloadUrl = `${BACKEND_URL}/download`;
-//     console.log('Sending POST request to:', downloadUrl);
-//     console.log('Request body:', { url: downloadedUrl, format_type: formatType, quality });
-
-//     const response = await axios.post(
-//       downloadUrl,
-//       { url: downloadedUrl, format_type: formatType, quality },
-//       {
-//         responseType: 'arraybuffer',
-//         headers: {
-//           'Content-Type': 'application/json',
-//         },
-//         onDownloadProgress: (progressEvent) => {
-//           if (progressEvent.total) {
-//             const progress = Math.round((progressEvent.loaded / progressEvent.total) * 100);
-//             console.log('Download progress:', progress, '%');
-//             setDownloadProgress(progress);
-//             Animated.timing(progressAnim, {
-//               toValue: progress / 100,
-//               duration: 200,
-//               useNativeDriver: false,
-//             }).start();
-//           }
-//         },
-//       }
-//     );
-
-//     console.log('Response status:', response.status);
-//     console.log('Response data length:', response.data.length);
-//     if (response.status !== 200) {
-//       throw new Error(`Download failed with status ${response.status}`);
-//     }
-//     if (!response.data || response.data.length === 0) {
-//       throw new Error('Received empty response data');
-//     }
-
-//     // Step 4: Write file to storage
-//     console.log('Writing file to:', filePath);
-//     const base64Data = base64.encodeFromByteArray(new Uint8Array(response.data));
-//     await RNFS.writeFile(filePath, base64Data, 'base64').catch(err => {
-//       console.error('File write error:', err);
-//       throw new Error('Failed to write file');
-//     });
-//     console.log('File written successfully');
-
-//     // Step 5: Verify file exists
-//     const fileExists = await RNFS.exists(filePath);
-//     console.log('File exists after download:', fileExists);
-//     if (!fileExists) {
-//       throw new Error('File was not saved to the specified path');
-//     }
-
-//     // Step 6: Register file in media store (Android)
-//     if (Platform.OS === 'android') {
-//       console.log('Scanning file for media store:', filePath);
-//       await RNFS.scanFile(filePath).catch(err => {
-//         console.error('Media scan error:', err);
-//         Alert.alert('Warning', 'File saved but may not appear in gallery/downloads.');
-//       });
-//       console.log('File scanned successfully');
-//     }
-
-//     // Step 7: Notify user
-//     const saveLocation = Platform.OS === 'android' ? `Downloads/${folderName}/${fileName}` : `${folderName}/${fileName}`;
-//     console.log('File saved to:', saveLocation);
-//     Alert.alert('Download Complete', `File saved to: ${saveLocation}`, [
-//       { text: 'OK' },
-//       Platform.OS === 'ios' && {
-//         text: 'Open',
-//         onPress: () => Linking.openURL(`file://${filePath}`).catch(err => console.error('Failed to open file:', err)),
-//       },
-//     ]);
-//   } catch (err) {
-//     console.error('Download error:', err.message, err.stack);
-//     Alert.alert('Error', `Failed to save file: ${err.message}. Please check your network or try again.`);
-//   } finally {
-//     console.log('Download process complete, resetting state');
-//     setIsDownloading(false);
-//     setCurrentDownload(null);
-//   }
-// };
-  // Helper function to convert blob to base64
-  
   const blobToBase64 = (blob) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -342,30 +205,46 @@ const handleDownload = async (formatType, quality) => {
   progressAnim.setValue(0);
 
   try {
-    const downloadDir = `${RNFS.DownloadDirectoryPath}/PNutDownloader`;
+    // Create base download directory if it doesn't exist
+    const baseDownloadDir = `${RNFS.DownloadDirectoryPath}/PNutDownloader`;
+    if (!await RNFS.exists(baseDownloadDir)) {
+      await RNFS.mkdir(baseDownloadDir);
+    }
+
+    // Create subfolder based on format type
+    const subFolder = formatType === 'video' ? 'Videos' : 'Audio';
+    const downloadDir = `${baseDownloadDir}/${subFolder}`;
     if (!await RNFS.exists(downloadDir)) {
       await RNFS.mkdir(downloadDir);
     }
+
+    // Sanitize the video title for filename
+    const sanitizeFilename = (name) => {
+      return name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+    };
+    
+    const videoTitle = videoData?.snippet?.title ? sanitizeFilename(videoData.snippet.title) : `download_${Date.now()}`;
+    const fileExtension = formatType === 'video' ? 'mp4' : 'mp3';
+    const filename = `${videoTitle}.${fileExtension}`;
+    const filepath = `${downloadDir}/${filename}`;
 
     const result = await PythonModule.downloadVideo(
       downloadedUrl, 
       formatType, 
       quality,
-      downloadDir
+      downloadDir,
+     
     );
     
     const data = JSON.parse(result);
-    console.log("datadatadata",data);
     
-   
-
     if (Platform.OS === 'android') {
       await RNFS.scanFile(data.filepath);
     }
 
     Alert.alert(
       'Download Complete',
-      `${data.title} saved successfully!`,
+      `${videoTitle} saved successfully in ${subFolder} folder!`,
       [
         { text: 'OK' },
         {
