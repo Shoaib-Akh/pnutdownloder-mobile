@@ -315,6 +315,7 @@ const fetchVideoData = async () => {
 //   }
 // };
   // Helper function to convert blob to base64
+  
   const blobToBase64 = (blob) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -341,7 +342,7 @@ const handleDownload = async (formatType, quality) => {
   progressAnim.setValue(0);
 
   try {
-    const downloadDir = `${RNFS.ExternalDirectoryPath}/PNutDownloader`;
+    const downloadDir = `${RNFS.DownloadDirectoryPath}/PNutDownloader`;
     if (!await RNFS.exists(downloadDir)) {
       await RNFS.mkdir(downloadDir);
     }
