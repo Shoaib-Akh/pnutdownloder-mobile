@@ -82,10 +82,11 @@ android {
  defaultConfig {
         python {
 
-            version "3.8" // Python version
+            version "3.9" // Python version
             pip {
                 install "yt-dlp"
                 install "requests"
+
                
             }
         }

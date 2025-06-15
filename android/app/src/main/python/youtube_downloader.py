@@ -3,13 +3,40 @@ import os
 import json
 import tempfile
 import time
+import logging
 from typing import Optional, Dict, Any
 
 class YoutubeDownloader:
     def __init__(self):
         self.progress_callback = None
         self.cookies_path = None
+        self.logs = []
+        self._setup_logger()
         self._create_cookies_file()
+    
+    def _setup_logger(self):
+        """Setup a logger for the downloader"""
+        self.logger = logging.getLogger('YoutubeDownloader')
+        self.logger.setLevel(logging.DEBUG)
+        
+        # Create a custom log handler that stores logs in memory
+        class MemoryLogHandler(logging.Handler):
+            def __init__(self, log_store):
+                super().__init__()
+                self.log_store = log_store
+            
+            def emit(self, record):
+                self.log_store.append(self.format(record))
+        
+        self.logs.clear()
+        handler = MemoryLogHandler(self.logs)
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        self.logger.addHandler(handler)
+
+    def _log(self, message):
+        """Helper to log messages and store them"""
+        self.logger.debug(message)
+        return message
 
     def _create_cookies_file(self):
         """Create a secure temporary cookies file"""
@@ -20,19 +47,24 @@ class YoutubeDownloader:
                 f.write("# HTTP Cookie File\n")
                 f.write("# Created for PNutDownloader\n")
             os.chmod(self.cookies_path, 0o600)  # Secure permissions
+            self._log(f"Created temporary cookies file at {self.cookies_path}")
         except Exception as e:
-            raise RuntimeError(f"Failed to create cookies file: {str(e)}")
+            error_msg = f"Failed to create cookies file: {str(e)}"
+            self._log(error_msg)
+            raise RuntimeError(error_msg)
 
     def set_cookies(self, cookies: str) -> bool:
         """Improved cookie setting with better validation"""
         try:
             if not cookies or not isinstance(cookies, str):
-                print("Invalid cookies: empty or not string")
+                error_msg = "Invalid cookies: empty or not string"
+                self._log(error_msg)
                 return False
 
             # Basic format validation
             if '=' not in cookies:
-                print("Invalid cookie format: missing key=value pairs")
+                error_msg = "Invalid cookie format: missing key=value pairs"
+                self._log(error_msg)
                 return False
 
             # Prepare cookie entries
@@ -65,7 +97,8 @@ class YoutubeDownloader:
                 ]))
 
             if not cookie_entries:
-                print("No valid cookies found in input")
+                error_msg = "No valid cookies found in input"
+                self._log(error_msg)
                 return False
 
             # Write to file with validation
@@ -77,22 +110,29 @@ class YoutubeDownloader:
 
             # Verify file was written correctly
             if not os.path.exists(self.cookies_path):
-                print("Failed to create cookies file")
+                error_msg = "Failed to create cookies file"
+                self._log(error_msg)
                 return False
 
-            print(f"Successfully wrote {len(cookie_entries)} cookies to {self.cookies_path}")
+            success_msg = f"Successfully wrote {len(cookie_entries)} cookies to {self.cookies_path}"
+            self._log(success_msg)
             return True
 
         except Exception as e:
-            print(f"Cookie processing failed: {str(e)}")
+            error_msg = f"Cookie processing failed: {str(e)}"
+            self._log(error_msg)
             return False
 
     def get_video_info(self, url: str) -> Dict[str, Any]:
         """Get video info with cookie verification"""
         try:
+            self._log(f"Getting video info for URL: {url}")
+            
             # First verify cookies file
             if not self._verify_cookies_file():
-                return {'error': 'Invalid cookies file', 'details': 'File missing or corrupted'}
+                error_result = {'error': 'Invalid cookies file', 'details': 'File missing or corrupted'}
+                self._log(f"Returning error: {error_result}")
+                return error_result
 
             ydl_opts = {
                 'quiet': False,  # Enable logging for debugging
@@ -100,27 +140,35 @@ class YoutubeDownloader:
                 'cookiefile': self.cookies_path,
                 'ignoreerrors': False,
                 'extract_flat': False,
+                'logger': self.logger,
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 
                 if not info:
-                    return {'error': 'No video info available', 'details': 'Extraction failed'}
+                    error_result = {'error': 'No video info available', 'details': 'Extraction failed'}
+                    self._log(f"Returning error: {error_result}")
+                    return error_result
                 
                 if 'formats' not in info or not info.get('formats'):
                     # Try without cookies to see if that works
                     no_cookie_info = self._try_without_cookies(url)
                     if no_cookie_info and 'formats' in no_cookie_info:
-                        return {
+                        result = {
                             'error': 'Cookies not working',
                             'details': 'Video available without cookies but not with them',
                             'suggestion': 'Check cookie validity',
                             'fallback_info': no_cookie_info
                         }
-                    return {'error': 'No formats available', 'details': 'Video may be restricted'}
+                        self._log(f"Returning cookies warning with fallback info: {result}")
+                        return result
+                    
+                    error_result = {'error': 'No formats available', 'details': 'Video may be restricted'}
+                    self._log(f"Returning error: {error_result}")
+                    return error_result
 
-                return {
+                result = {
                     'title': info.get('title', ''),
                     'duration': info.get('duration', 0),
                     'thumbnail': info.get('thumbnail', ''),
@@ -128,47 +176,62 @@ class YoutubeDownloader:
                     'view_count': info.get('view_count', 0),
                     'formats': info.get('formats', [])
                 }
+                self._log(f"Successfully retrieved video info: {result}")
+                return result
 
         except yt_dlp.utils.DownloadError as e:
-            return {'error': 'Download error', 'details': str(e)}
+            error_result = {'error': 'Download error', 'details': str(e)}
+            self._log(f"Returning download error: {error_result}")
+            return error_result
         except Exception as e:
-            return {'error': 'Unexpected error', 'details': str(e)}
+            error_result = {'error': 'Unexpected error', 'details': str(e)}
+            self._log(f"Returning unexpected error: {error_result}")
+            return error_result
 
     def _verify_cookies_file(self) -> bool:
         """Verify the cookies file exists and is valid"""
         if not (self.cookies_path and os.path.exists(self.cookies_path)):
-            print("Cookies file does not exist")
+            self._log("Cookies file does not exist")
             return False
         
         try:
             with open(self.cookies_path, 'r') as f:
                 content = f.read()
                 if not content or 'youtube.com' not in content:
-                    print("Cookies file appears invalid")
+                    self._log("Cookies file appears invalid")
                     return False
             return True
-        except Exception:
+        except Exception as e:
+            self._log(f"Error verifying cookies file: {str(e)}")
             return False
 
     def _try_without_cookies(self, url: str) -> Optional[Dict[str, Any]]:
         """Try getting info without cookies for comparison"""
         try:
+            self._log(f"Trying to get info without cookies for URL: {url}")
             ydl_opts = {
                 'quiet': False,
                 'verbose': True,
                 'ignoreerrors': False,
+                'logger': self.logger,
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                return ydl.extract_info(url, download=False)
-        except Exception:
+                info = ydl.extract_info(url, download=False)
+                self._log(f"Info without cookies: {'success' if info else 'failed'}")
+                return info
+        except Exception as e:
+            self._log(f"Error getting info without cookies: {str(e)}")
             return None
 
     def download_video(self, url: str, format_type: str, quality: str, 
                       download_dir: Optional[str] = None) -> Dict[str, Any]:
         """Download video/audio"""
         try:
+            self._log(f"Starting download for URL: {url}, format: {format_type}, quality: {quality}")
+            
             download_dir = download_dir or os.path.join(os.path.expanduser('~'), 'PNutDownloader')
             os.makedirs(download_dir, exist_ok=True)
+            self._log(f"Using download directory: {download_dir}")
                 
             ydl_opts = {
                 'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
@@ -178,10 +241,12 @@ class YoutubeDownloader:
                 'ignoreerrors': True,
                 'postprocessors': [],
                 'merge_output_format': None,
+                'logger': self.logger,
             }
 
             if format_type == 'video':
                 ydl_opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]'
+                self._log("Setting format to best MP4 video")
             elif format_type == 'audio':
                 ydl_opts['format'] = 'bestaudio[ext=m4a]/bestaudio'
                 ydl_opts['extractaudio'] = True
@@ -190,20 +255,28 @@ class YoutubeDownloader:
                     'preferredcodec': 'mp3',
                     'preferredquality': '192',
                 }]
+                self._log("Setting format to best audio (MP3)")
             else:
-                return {'error': 'Invalid format type'}
+                error_result = {'error': 'Invalid format type'}
+                self._log(f"Returning error: {error_result}")
+                return error_result
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 filepath = ydl.prepare_filename(info)
                 
-                return {
+                result = {
                     'filepath': filepath,
                     'filename': os.path.basename(filepath),
-                    'title': info.get('title', '')
+                    'title': info.get('title', ''),
+                    'logs': self.logs,
                 }
+                self._log(f"Download completed successfully: {result}")
+                return result
         except Exception as e:
-            return {'error': str(e)}
+            error_result = {'error': str(e), 'logs': self.logs}
+            self._log(f"Download failed: {error_result}")
+            return error_result
 
     def _progress_hook(self, d: Dict[str, Any]):
         """Handle download progress"""
@@ -211,19 +284,26 @@ class YoutubeDownloader:
             try:
                 progress = float(d.get('_percent_str', '0%').strip('%'))
                 self.progress_callback(progress)
-            except (ValueError, AttributeError):
-                pass
+                self._log(f"Download progress: {progress}%")
+            except (ValueError, AttributeError) as e:
+                self._log(f"Error processing progress update: {str(e)}")
 
 # Bridge functions
 def create_downloader():
     return YoutubeDownloader()
 
 def set_cookies(downloader: YoutubeDownloader, cookies: str) -> bool:
-    return downloader.set_cookies(cookies)
+    result = downloader.set_cookies(cookies)
+    downloader._log(f"set_cookies result: {result}")
+    return result
 
 def get_video_info(downloader: YoutubeDownloader, url: str) -> str:
-    return json.dumps(downloader.get_video_info(url))
+    result = downloader.get_video_info(url)
+    downloader._log(f"get_video_info result: {result}")
+    return json.dumps(result)
 
 def download_video(downloader: YoutubeDownloader, url: str, format_type: str, 
                   quality: str, download_dir: Optional[str] = None) -> str:
-    return json.dumps(downloader.download_video(url, format_type, quality, download_dir))
+    result = downloader.download_video(url, format_type, quality, download_dir)
+    downloader._log(f"download_video result: {result}")
+    return json.dumps(result)

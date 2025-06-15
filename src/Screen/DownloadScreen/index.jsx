@@ -205,46 +205,45 @@ const handleDownload = async (formatType, quality) => {
   progressAnim.setValue(0);
 
   try {
-    // Create base download directory if it doesn't exist
     const baseDownloadDir = `${RNFS.DownloadDirectoryPath}/PNutDownloader`;
     if (!await RNFS.exists(baseDownloadDir)) {
       await RNFS.mkdir(baseDownloadDir);
     }
 
-    // Create subfolder based on format type
     const subFolder = formatType === 'video' ? 'Videos' : 'Audio';
     const downloadDir = `${baseDownloadDir}/${subFolder}`;
     if (!await RNFS.exists(downloadDir)) {
       await RNFS.mkdir(downloadDir);
     }
 
-    // Sanitize the video title for filename
-    const sanitizeFilename = (name) => {
-      return name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
-    };
-    
-    const videoTitle = videoData?.snippet?.title ? sanitizeFilename(videoData.snippet.title) : `download_${Date.now()}`;
-    const fileExtension = formatType === 'video' ? 'mp4' : 'mp3';
-    const filename = `${videoTitle}.${fileExtension}`;
-    const filepath = `${downloadDir}/${filename}`;
-
     const result = await PythonModule.downloadVideo(
-      downloadedUrl, 
-      formatType, 
+      downloadedUrl,
+      formatType,
       quality,
-      downloadDir,
-     
+      downloadDir
     );
-    
+
     const data = JSON.parse(result);
-    
+    console.log("Download result:", data);
+console.log("data.logs",data.logs);
+
+    // Display logs in console
+    if (data.logs) {
+      console.log("===== YT-DLP LOGS =====");
+      data.logs.forEach(log => console.log(log));
+    }
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
     if (Platform.OS === 'android') {
       await RNFS.scanFile(data.filepath);
     }
 
     Alert.alert(
       'Download Complete',
-      `${videoTitle} saved successfully in ${subFolder} folder!`,
+      `${data.title} saved successfully!`,
       [
         { text: 'OK' },
         {
@@ -254,16 +253,8 @@ const handleDownload = async (formatType, quality) => {
       ]
     );
   } catch (err) {
-    console.log("Download error:", err);
-    
-    let errorMessage = 'Download failed';
-    if (err.message.includes('requested format not available')) {
-      errorMessage = 'The requested format is not available for direct download';
-    } else if (err.message) {
-      errorMessage = err.message;
-    }
-
-    Alert.alert('Error', errorMessage);
+    console.error("Download error:", err);
+    Alert.alert('Error', err.message || 'Download failed');
   } finally {
     setIsDownloading(false);
     setCurrentDownload(null);
