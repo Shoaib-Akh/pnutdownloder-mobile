@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
-  SafeAreaView,
   Animated,
   Alert,
   ActivityIndicator,
@@ -18,6 +17,9 @@ import axios from 'axios';
 import RNFS from 'react-native-fs';
 import { check, request, PERMISSIONS, RESULTS, openSettings } from 'react-native-permissions';
 import base64 from 'react-native-base64';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNavigation } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 const DownloadScreen = ({ route }) => {
   const { PythonModule } = NativeModules;
 
@@ -190,6 +192,9 @@ const fetchVideoData = async () => {
       reader.readAsDataURL(blob);
     });
   };
+const navigation=useNavigation()
+const STORAGE_KEY = '@PNutDownloader/downloads';
+
 const handleDownload = async (formatType, quality) => {
   if (isDownloading) {
     Alert.alert('Info', 'A download is already in progress.');
@@ -218,30 +223,16 @@ const handleDownload = async (formatType, quality) => {
 
     // Set up progress callback
     const progressCallback = (progress) => {
-      // Ensure we're on the main thread for UI updates
-      if (Platform.OS === 'ios') {
-        setDownloadProgress(progress);
-        Animated.timing(progressAnim, {
-          toValue: progress / 100,
-          duration: 100,
-          useNativeDriver: false,
-        }).start();
-      } else {
-        // Android needs to run on UI thread
-        runOnUI(() => {
-          setDownloadProgress(progress);
-          Animated.timing(progressAnim, {
-            toValue: progress / 100,
-            duration: 100,
-            useNativeDriver: false,
-          }).start();
-        }).run();
-      }
+      setDownloadProgress(progress);
+      Animated.timing(progressAnim, {
+        toValue: progress / 100,
+        duration: 100,
+        useNativeDriver: false,
+      }).start();
     };
 
     // Register the progress callback
     await PythonModule.setProgressCallback(progressCallback);
-
     const result = await PythonModule.downloadVideo(
       downloadedUrl,
       formatType,
@@ -260,14 +251,41 @@ const handleDownload = async (formatType, quality) => {
       await RNFS.scanFile(data.filepath);
     }
 
+    // Save download info to local storage
+    try {
+      const downloadInfo = {
+        id: Date.now().toString(),
+        title: videoData?.snippet?.title || data.title || 'Unknown',
+        filepath: data.filepath,
+        type: formatType,
+        quality: quality,
+        date: new Date().toISOString(),
+        thumbnail: videoData?.snippet?.thumbnails?.medium?.url,
+        channel: videoData?.snippet?.channelTitle,
+        duration: videoData?.contentDetails?.duration,
+        url: downloadedUrl,
+        size: data.size || 0,
+      };
+
+      const existingDownloads = await AsyncStorage.getItem(STORAGE_KEY);
+      let downloads = existingDownloads ? JSON.parse(existingDownloads) : [];
+      downloads.unshift(downloadInfo);
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(downloads));
+      
+      console.log('Download saved to storage:', downloadInfo);
+    } catch (storageError) {
+      console.error('Error saving download to storage:', storageError);
+    }
+
     Alert.alert(
       'Download Complete',
       `${data.title} saved successfully!`,
       [
         { text: 'OK' },
+        
         {
-          text: 'Open File',
-          onPress: () => Linking.openURL(`file://${data.filepath}`)
+          text: 'View History',
+          onPress: () => navigation.navigate('Playlist')
         }
       ]
     );
@@ -277,7 +295,6 @@ const handleDownload = async (formatType, quality) => {
   } finally {
     setIsDownloading(false);
     setCurrentDownload(null);
-    // Clean up the progress callback
     try {
       await PythonModule.removeProgressCallback();
     } catch (e) {
@@ -428,6 +445,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+
   },
   scrollContainer: {
     padding: 20,
