@@ -4,16 +4,58 @@ import json
 import tempfile
 import time
 import logging
-from typing import Optional, Dict, Any
+from threading import Lock
+from typing import Optional, Dict, Any, Callable
 
 class YoutubeDownloader:
     def __init__(self):
         self.progress_callback = None
         self.cookies_path = None
         self.logs = []
+        self.callback_lock = Lock()
         self._setup_logger()
         self._create_cookies_file()
-    
+
+    def _setup_logger(self):
+        """Setup a logger for the downloader"""
+        self.logger = logging.getLogger('YoutubeDownloader')
+        self.logger.setLevel(logging.DEBUG)
+        
+        class MemoryLogHandler(logging.Handler):
+            def __init__(self, log_store):
+                super().__init__()
+                self.log_store = log_store
+            
+            def emit(self, record):
+                self.log_store.append(self.format(record))
+        
+        self.logs.clear()
+        handler = MemoryLogHandler(self.logs)
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        self.logger.addHandler(handler)
+
+    def set_progress_callback(self, callback: Callable[[float], None]):
+        """Set the progress callback function"""
+        with self.callback_lock:
+            self.progress_callback = callback
+
+    def remove_progress_callback(self):
+        """Remove the progress callback"""
+        with self.callback_lock:
+            self.progress_callback = None
+
+    def _progress_hook(self, d: Dict[str, Any]):
+        """Handle download progress and send updates"""
+        if d.get('status') == 'downloading' and self.progress_callback:
+            try:
+                progress = float(d.get('_percent_str', '0%').strip('%'))
+                with self.callback_lock:
+                    if self.progress_callback:
+                        self.progress_callback(progress)
+                self._log(f"Download progress: {progress}%")
+            except (ValueError, AttributeError) as e:
+                self._log(f"Error processing progress update: {str(e)}")
+                
     def _setup_logger(self):
         """Setup a logger for the downloader"""
         self.logger = logging.getLogger('YoutubeDownloader')

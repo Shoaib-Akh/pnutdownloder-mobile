@@ -6,7 +6,8 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.Promise
-import com.facebook.react.bridge.ReadableMap
+import com.facebook.react.bridge.Callback
+import android.util.Log
 
 class PythonModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     
@@ -22,6 +23,31 @@ class PythonModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
     }
 
     override fun getName(): String = "PythonModule"
+
+    @ReactMethod
+    fun setProgressCallback(callback: Callback) {
+        try {
+            py.getModule("youtube_downloader").callAttr(
+                "set_progress_callback", 
+                downloader,
+                callback
+            )
+        } catch (e: Exception) {
+            Log.e("PythonModule", "Error setting progress callback", e)
+        }
+    }
+
+    @ReactMethod
+    fun removeProgressCallback() {
+        try {
+            py.getModule("youtube_downloader").callAttr(
+                "remove_progress_callback", 
+                downloader
+            )
+        } catch (e: Exception) {
+            Log.e("PythonModule", "Error removing progress callback", e)
+        }
+    }
 
     @ReactMethod
     fun setCookies(cookies: String, promise: Promise) {
@@ -76,7 +102,6 @@ class PythonModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
     @ReactMethod
     fun cleanup(promise: Promise) {
         try {
-            // Python's __del__ will handle cleanup
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("CLEANUP_ERROR", e)

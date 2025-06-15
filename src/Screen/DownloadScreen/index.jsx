@@ -216,6 +216,32 @@ const handleDownload = async (formatType, quality) => {
       await RNFS.mkdir(downloadDir);
     }
 
+    // Set up progress callback
+    const progressCallback = (progress) => {
+      // Ensure we're on the main thread for UI updates
+      if (Platform.OS === 'ios') {
+        setDownloadProgress(progress);
+        Animated.timing(progressAnim, {
+          toValue: progress / 100,
+          duration: 100,
+          useNativeDriver: false,
+        }).start();
+      } else {
+        // Android needs to run on UI thread
+        runOnUI(() => {
+          setDownloadProgress(progress);
+          Animated.timing(progressAnim, {
+            toValue: progress / 100,
+            duration: 100,
+            useNativeDriver: false,
+          }).start();
+        }).run();
+      }
+    };
+
+    // Register the progress callback
+    await PythonModule.setProgressCallback(progressCallback);
+
     const result = await PythonModule.downloadVideo(
       downloadedUrl,
       formatType,
@@ -225,13 +251,6 @@ const handleDownload = async (formatType, quality) => {
 
     const data = JSON.parse(result);
     console.log("Download result:", data);
-console.log("data.logs",data.logs);
-
-    // Display logs in console
-    if (data.logs) {
-      console.log("===== YT-DLP LOGS =====");
-      data.logs.forEach(log => console.log(log));
-    }
 
     if (data.error) {
       throw new Error(data.error);
@@ -258,6 +277,12 @@ console.log("data.logs",data.logs);
   } finally {
     setIsDownloading(false);
     setCurrentDownload(null);
+    // Clean up the progress callback
+    try {
+      await PythonModule.removeProgressCallback();
+    } catch (e) {
+      console.error("Error removing progress callback:", e);
+    }
   }
 };
 
@@ -333,18 +358,27 @@ console.log("data.logs",data.logs);
         ) : (
           <Text style={styles.infoText}>No video data available</Text>
         )}
-
-        {isDownloading && (
-          <View style={styles.downloadContainer}>
-            <Text style={styles.downloadTitle}>
-              Downloading {currentDownload?.formatType} ({currentDownload?.quality})
-            </Text>
-            <View style={styles.progressBar}>
-              <Animated.View style={[styles.progressFill, { width: interpolateProgress }]} />
-            </View>
-            <Text style={styles.progressText}>{Math.round(downloadProgress)}%</Text>
-          </View>
-        )}
+{isDownloading && (
+  <View style={styles.downloadContainer}>
+    <Text style={styles.downloadTitle}>
+      Downloading {currentDownload?.formatType} ({currentDownload?.quality})
+    </Text>
+    <View style={styles.progressBar}>
+      <Animated.View 
+        style={[
+          styles.progressFill, 
+          { 
+            width: interpolateProgress,
+            backgroundColor: downloadProgress < 100 ? '#4caf50' : '#2196F3'
+          }
+        ]} 
+      />
+    </View>
+    <Text style={styles.progressText}>
+      {Math.round(downloadProgress)}% - {downloadProgress < 100 ? 'Downloading...' : 'Processing...'}
+    </Text>
+  </View>
+)}
 
         <Text style={styles.sectionTitle}>🎬 Video Quality</Text>
         {videoQualities.map((item, index) => (
