@@ -139,6 +139,8 @@ const DownloadScreen = ({ route }) => {
     //   }
     // };
 const fetchVideoData = async () => {
+  console.log("downloadedUrl",downloadedUrl);
+  
   if (!downloadedUrl) {
     setError('No video URL provided');
     setLoading(false);
