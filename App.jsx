@@ -1,9 +1,10 @@
 import * as React from 'react';
 import { useEffect, useState } from 'react';
-import { View, Image, Text, ActivityIndicator, StyleSheet, StatusBar, Alert, Linking } from 'react-native';
+import { View, Image, Text, StyleSheet, StatusBar, Alert, Linking } from 'react-native';
 import { NavigationContainer, DefaultTheme as NavigationTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import semver from 'semver';
 import images from './utils/images';
 import HomeScreen from './src/Screen/Home';
 import Browser from './src/Screen/Browser';
@@ -11,7 +12,6 @@ import Playlist from './src/Screen/PlayList';
 import DownloadScreen from './src/Screen/DownloadScreen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-// Theme Configuration
 const AppTheme = {
   ...NavigationTheme,
   colors: {
@@ -24,9 +24,11 @@ const AppTheme = {
   },
 };
 
-const GITHUB_RELEASES_URL = "https://api.github.com/repos/Shoaib-Akh/pnutdownloder-mobile/releases/latest";
-const GITHUB_VERSION_URL = "https://raw.githubusercontent.com/Shoaib-Akh/pnutdownloder-mobile/main/version.json";
-const APP_VERSION = "1.0.01";
+const GITHUB_RELEASES_URL = 'https://api.github.com/repos/Shoaib-Akh/pnutdownloder-mobile/releases/latest';
+const GITHUB_VERSION_URL = 'https://raw.githubusercontent.com/Shoaib-Akh/pnutdownloder-mobile/main/version.json';
+const APP_VERSION = '1.0.12';
+
+const GITHUB_TOKEN = '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'; // DO NOT commit this in public!
 
 const checkVersion = async () => {
   const fallbackResponse = {
@@ -34,52 +36,37 @@ const checkVersion = async () => {
     latestVersion: APP_VERSION,
     needsUpdate: false,
     downloadUrl: null,
-    changelog: 'Version check failed'
+    changelog: 'Version check failed',
   };
 
   try {
-    // First try GitHub Releases API
     console.log('Checking GitHub Releases...');
-    const apiResponse = await fetch(GITHUB_RELEASES_URL);
-    
-    if (apiResponse.ok) {
-      try {
-        const releaseData = await apiResponse.json();
-        console.log('Release data:', releaseData);
-        
-        const apkAsset = releaseData.assets?.find(asset => 
-          asset.name?.endsWith('.apk')
-        );
-        
-        return {
-          currentVersion: APP_VERSION,
-          latestVersion: releaseData.tag_name.replace(/^v/, ''),
-          needsUpdate: releaseData.tag_name.replace(/^v/, '') > APP_VERSION,
-          downloadUrl: apkAsset?.browser_download_url || null,
-          changelog: releaseData.body || 'New version available'
-        };
-      } catch (e) {
-        console.warn('Failed to parse GitHub API response:', e);
-      }
-    }
+    const apiResponse = await fetch(GITHUB_RELEASES_URL, {
+      headers: {
+        Authorization: `token ${GITHUB_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+      },
+    });
 
-    // Fallback to version.json
-    console.log('Falling back to version.json...');
-    const versionResponse = await fetch(GITHUB_VERSION_URL);
-    
-    if (versionResponse.ok) {
-      try {
-        const versionData = await versionResponse.json();
-        return {
-          currentVersion: APP_VERSION,
-          latestVersion: versionData.version,
-          needsUpdate: versionData.version > APP_VERSION,
-          downloadUrl: versionData.downloadUrl || null,
-          changelog: versionData.changelog || 'Update available'
-        };
-      } catch (e) {
-        console.warn('Failed to parse version.json:', e);
-      }
+    console.log('apiResponse status:', apiResponse.status);
+
+    if (apiResponse.ok) {
+      const releaseData = await apiResponse.json();
+      console.log('Release data:', releaseData);
+
+      const apkAsset = releaseData.assets?.find(asset =>
+        asset.name?.endsWith('.apk')
+      );
+
+      const latestVersion = releaseData.tag_name?.replace(/^v/, '') || APP_VERSION;
+
+      return {
+        currentVersion: APP_VERSION,
+        latestVersion,
+        needsUpdate: semver.gt(latestVersion, APP_VERSION),
+        downloadUrl: apkAsset?.browser_download_url || null,
+        changelog: releaseData.body || 'New version available',
+      };
     }
   } catch (error) {
     console.error('Version check error:', error);
@@ -87,6 +74,7 @@ const checkVersion = async () => {
 
   return fallbackResponse;
 };
+
 
 function SplashScreen() {
   return (
@@ -142,7 +130,14 @@ function MainTabs() {
             iconName = 'circle';
           }
 
-          return <Ionicons name={iconName} size={size} color={color} />;
+          return (
+            <Ionicons
+              name={iconName}
+              size={size}
+              color={color}
+              accessibilityLabel={`${route.name} tab icon`}
+            />
+          );
         },
         tabBarActiveTintColor: AppTheme.colors.primary,
         tabBarInactiveTintColor: 'gray',
@@ -161,6 +156,7 @@ function MainTabs() {
 function App() {
   const [isSplashVisible, setIsSplashVisible] = useState(true);
   const [versionInfo, setVersionInfo] = useState(null);
+  console.log('versionInfo', versionInfo);
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -173,18 +169,18 @@ function App() {
           versionData.changelog,
           [
             { text: 'Later', style: 'cancel' },
-            { 
-              text: 'Download Update', 
+            {
+              text: 'Download Update',
               onPress: () => {
-                if (versionData.downloadUrl) {
+                
                   Linking.openURL(versionData.downloadUrl);
-                } else {
-                  Linking.openURL("https://github.com/Shoaib-Akh/pnutdownloder-mobile/releases");
-                }
-              }
-            }
+                
+              },
+            },
           ]
         );
+      } else if (versionData.changelog === 'Version check failed') {
+        console.warn('Both version checks failed. Using fallback version.');
       }
 
       setTimeout(() => setIsSplashVisible(false), 2000);
