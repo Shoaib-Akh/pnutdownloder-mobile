@@ -1,10 +1,11 @@
 import * as React from 'react';
 import { useEffect, useState } from 'react';
-import { View, Image, Text, StyleSheet, StatusBar, Alert, Linking } from 'react-native';
+import { View, Image, Text, StyleSheet, StatusBar, Alert, Linking, Platform, NativeModules } from 'react-native';
 import { NavigationContainer, DefaultTheme as NavigationTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import semver from 'semver';
+import RNFS from 'react-native-fs';
 import images from './utils/images';
 import HomeScreen from './src/Screen/Home';
 import Browser from './src/Screen/Browser';
@@ -25,10 +26,7 @@ const AppTheme = {
 };
 
 const GITHUB_RELEASES_URL = 'https://api.github.com/repos/Shoaib-Akh/pnutdownloder-mobile/releases/latest';
-const GITHUB_VERSION_URL = 'https://raw.githubusercontent.com/Shoaib-Akh/pnutdownloder-mobile/main/version.json';
-const APP_VERSION = '1.0.12';
-
-const GITHUB_TOKEN = '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'; // DO NOT commit this in public!
+const APP_VERSION = '1.0.11';
 
 const checkVersion = async () => {
   const fallbackResponse = {
@@ -40,14 +38,7 @@ const checkVersion = async () => {
   };
 
   try {
-    console.log('Checking GitHub Releases...');
-    const apiResponse = await fetch(GITHUB_RELEASES_URL, {
-      headers: {
-        Authorization: `token ${GITHUB_TOKEN}`,
-        Accept: 'application/vnd.github+json',
-      },
-    });
-
+    const apiResponse = await fetch(GITHUB_RELEASES_URL);
     console.log('apiResponse status:', apiResponse.status);
 
     if (apiResponse.ok) {
@@ -75,6 +66,66 @@ const checkVersion = async () => {
   return fallbackResponse;
 };
 
+const installApk = async (apkPath) => {
+  try {
+    if (Platform.OS === 'android') {
+      // For Android 8+ we need to use the FileProvider approach
+      if (Platform.Version >= 26) {
+        // Using NativeModules to handle the installation
+        if (NativeModules.InstallApk) {
+          NativeModules.InstallApk.install(apkPath);
+        } else {
+          // Fallback for devices without InstallApk module
+          await Linking.openURL(`file://${apkPath}`);
+        }
+      } else {
+        // For older Android versions
+        await Linking.openURL(`file://${apkPath}`);
+      }
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('Installation failed:', error);
+    throw error;
+  }
+};
+
+const downloadAndInstallUpdate = async (downloadUrl, version) => {
+  try {
+    // Create downloads directory if it doesn't exist
+    const downloadDir = `${RNFS.DocumentDirectoryPath}/updates`;
+    const dirExists = await RNFS.exists(downloadDir);
+    if (!dirExists) {
+      await RNFS.mkdir(downloadDir);
+    }
+
+    // Download the APK
+    const apkPath = `${downloadDir}/update_v${version}.apk`;
+    const downloadOptions = {
+      fromUrl: downloadUrl,
+      toFile: apkPath,
+      progress: (res) => {
+        const progress = (res.bytesWritten / res.contentLength) * 100;
+        console.log(`Download progress: ${progress.toFixed(0)}%`);
+      },
+    };
+
+    const download = RNFS.downloadFile(downloadOptions);
+    const result = await download.promise;
+
+    if (result.statusCode === 200) {
+      console.log('Download complete, installing...');
+      await installApk(apkPath);
+      return true;
+    } else {
+      throw new Error(`Download failed with status ${result.statusCode}`);
+    }
+  } catch (error) {
+    console.error('Update failed:', error);
+    throw error;
+  }
+};
 
 function SplashScreen() {
   return (
@@ -156,34 +207,25 @@ function MainTabs() {
 function App() {
   const [isSplashVisible, setIsSplashVisible] = useState(true);
   const [versionInfo, setVersionInfo] = useState(null);
-  console.log('versionInfo', versionInfo);
 
   useEffect(() => {
     const initializeApp = async () => {
       const versionData = await checkVersion();
       setVersionInfo(versionData);
 
-      if (versionData.needsUpdate) {
-        Alert.alert(
-          `Update Available (v${versionData.latestVersion})`,
-          versionData.changelog,
-          [
-            { text: 'Later', style: 'cancel' },
-            {
-              text: 'Download Update',
-              onPress: () => {
-                
-                  Linking.openURL(versionData.downloadUrl);
-                
-              },
-            },
-          ]
-        );
-      } else if (versionData.changelog === 'Version check failed') {
-        console.warn('Both version checks failed. Using fallback version.');
+      if (versionData.needsUpdate && versionData.downloadUrl) {
+        try {
+          await downloadAndInstallUpdate(
+            versionData.downloadUrl, 
+            versionData.latestVersion
+          );
+        } catch (error) {
+          console.log('Automatic update failed, continuing to app...');
+          setTimeout(() => setIsSplashVisible(false), 2000);
+        }
+      } else {
+        setTimeout(() => setIsSplashVisible(false), 2000);
       }
-
-      setTimeout(() => setIsSplashVisible(false), 2000);
     };
 
     initializeApp();

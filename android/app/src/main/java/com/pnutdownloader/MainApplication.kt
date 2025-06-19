@@ -8,7 +8,7 @@ import com.facebook.react.ReactNativeHost
 import com.facebook.react.ReactPackage
 import com.rnfs.RNFSPackage  // For react-native-fs
 import com.pnutdownloader.PythonPackage  // Add this import for your Python package
-
+import com.pnutdownloader.CustomPackage 
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.load
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
@@ -22,9 +22,10 @@ class MainApplication : Application(), ReactApplication {
             override fun getPackages(): List<ReactPackage> =
                 PackageList(this).packages.apply {
                     // Add your custom packages here
-                    add(PythonPackage())  // Add Python package
-                    add(RNFSPackage())    // Add RNFS package
-                    // Packages that cannot be autolinked yet can be added manually here
+                    add(CustomPackage())
+                    add(PythonPackage())
+                    add(RNFSPackage())
+                    // Add any other non-autolinked packages here
                 }
 
             override fun getJSMainModuleName(): String = "index"
