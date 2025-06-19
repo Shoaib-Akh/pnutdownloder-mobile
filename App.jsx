@@ -11,7 +11,7 @@ import Browser from './src/Screen/Browser';
 import Playlist from './src/Screen/PlayList';
 import DownloadScreen from './src/Screen/DownloadScreen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-
+import { checkAppVersion } from './utils/versionCheck';
 // Theme Configuration
 const AppTheme = {
   ...NavigationTheme,
@@ -24,7 +24,65 @@ const AppTheme = {
     border: '#E0E0E0',
   },
 };
+const APP_VERSION = "1.0.1"; // Must match your app's version
+const GITHUB_VERSION_URL = "https://raw.githubusercontent.com/Shoaib-Akh/pnutdownloder-mobile/main/version.json";
+const GITHUB_RELEASES_URL = "https://api.github.com/repos/Shoaib-Akh/pnutdownloder-mobile/releases/latest";
+const checkVersion = async () => {
+  let versionData = {
+    currentVersion: APP_VERSION,
+    latestVersion: APP_VERSION,
+    needsUpdate: false,
+    downloadUrl: null,
+    changelog: 'Version check failed'
+  };
 
+  try {
+    // Attempt GitHub API
+    const apiResponse = await fetch(GITHUB_RELEASES_URL);
+    console.log("apiResponse",apiResponse);
+    
+    if (apiResponse.ok) {
+      const text = await apiResponse.text();
+      console.log("text",text);
+      
+      try {
+        const data = JSON.parse(text);
+        versionData = {
+          ...versionData,
+          latestVersion: data.tag_name.replace(/^v/, ''),
+          needsUpdate: data.tag_name.replace(/^v/, '') > APP_VERSION,
+          downloadUrl: data.assets[0]?.browser_download_url,
+          changelog: data.body || 'New version available'
+        };
+        return versionData;
+      } catch (e) {
+        console.warn('GitHub API JSON parse failed:', e);
+      }
+    }
+
+    // Fallback to version.json
+    const versionResponse = await fetch(GITHUB_VERSION_URL);
+    if (versionResponse.ok) {
+      const text = await versionResponse.text();
+      try {
+        const data = JSON.parse(text);
+        versionData = {
+          ...versionData,
+          latestVersion: data.version,
+          needsUpdate: data.version > APP_VERSION,
+          downloadUrl: data.downloadUrl,
+          changelog: data.changelog
+        };
+      } catch (e) {
+        console.warn('version.json parse failed:', e);
+      }
+    }
+  } catch (error) {
+    console.error('Version check error:', error);
+  }
+
+  return versionData;
+};
 // Splash Screen Component
 function SplashScreen() {
   return (
@@ -121,12 +179,38 @@ function MainTabs() {
 // Main App Component
 function App() {
   const [isSplashVisible, setIsSplashVisible] = useState(true);
+const [versionInfo, setVersionInfo] = useState(null);
+console.log("versionInfo",versionInfo);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsSplashVisible(false);
-    }, 2000);
-    return () => clearTimeout(timer);
+    useEffect(() => {
+    const initializeApp = async () => {
+      const versionData = await checkVersion();
+      setVersionInfo(versionData);
+
+      if (versionData.needsUpdate) {
+        Alert.alert(
+          `Update Available (v${versionData.latestVersion})`,
+          versionData.changelog,
+          [
+            { text: 'Later', style: 'cancel' },
+            { 
+              text: 'Download Update', 
+              onPress: () => {
+                if (versionData.downloadUrl) {
+                  Linking.openURL(versionData.downloadUrl);
+                } else {
+                  Linking.openURL("https://github.com/Shoaib-Akh/pnutdownloder-mobile/releases");
+                }
+              }
+            }
+          ]
+        );
+      }
+
+      setTimeout(() => setIsSplashVisible(false), 2000);
+    };
+
+    initializeApp();
   }, []);
 
   return (
