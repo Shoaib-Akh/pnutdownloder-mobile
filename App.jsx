@@ -1,7 +1,6 @@
-
 import * as React from 'react';
 import { useEffect, useState } from 'react';
-import { View, Image, Text, ActivityIndicator, StyleSheet, StatusBar } from 'react-native';
+import { View, Image, Text, ActivityIndicator, StyleSheet, StatusBar, Alert, Linking } from 'react-native';
 import { NavigationContainer, DefaultTheme as NavigationTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -11,7 +10,7 @@ import Browser from './src/Screen/Browser';
 import Playlist from './src/Screen/PlayList';
 import DownloadScreen from './src/Screen/DownloadScreen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { checkAppVersion } from './utils/versionCheck';
+
 // Theme Configuration
 const AppTheme = {
   ...NavigationTheme,
@@ -24,11 +23,13 @@ const AppTheme = {
     border: '#E0E0E0',
   },
 };
-const APP_VERSION = "1.0.1"; // Must match your app's version
-const GITHUB_VERSION_URL = "https://raw.githubusercontent.com/Shoaib-Akh/pnutdownloder-mobile/main/version.json";
+
 const GITHUB_RELEASES_URL = "https://api.github.com/repos/Shoaib-Akh/pnutdownloder-mobile/releases/latest";
+const GITHUB_VERSION_URL = "https://raw.githubusercontent.com/Shoaib-Akh/pnutdownloder-mobile/main/version.json";
+const APP_VERSION = "1.0.01";
+
 const checkVersion = async () => {
-  let versionData = {
+  const fallbackResponse = {
     currentVersion: APP_VERSION,
     latestVersion: APP_VERSION,
     needsUpdate: false,
@@ -37,53 +38,56 @@ const checkVersion = async () => {
   };
 
   try {
-    // Attempt GitHub API
+    // First try GitHub Releases API
+    console.log('Checking GitHub Releases...');
     const apiResponse = await fetch(GITHUB_RELEASES_URL);
-    console.log("apiResponse",apiResponse);
     
     if (apiResponse.ok) {
-      const text = await apiResponse.text();
-      console.log("text",text);
-      
       try {
-        const data = JSON.parse(text);
-        versionData = {
-          ...versionData,
-          latestVersion: data.tag_name.replace(/^v/, ''),
-          needsUpdate: data.tag_name.replace(/^v/, '') > APP_VERSION,
-          downloadUrl: data.assets[0]?.browser_download_url,
-          changelog: data.body || 'New version available'
+        const releaseData = await apiResponse.json();
+        console.log('Release data:', releaseData);
+        
+        const apkAsset = releaseData.assets?.find(asset => 
+          asset.name?.endsWith('.apk')
+        );
+        
+        return {
+          currentVersion: APP_VERSION,
+          latestVersion: releaseData.tag_name.replace(/^v/, ''),
+          needsUpdate: releaseData.tag_name.replace(/^v/, '') > APP_VERSION,
+          downloadUrl: apkAsset?.browser_download_url || null,
+          changelog: releaseData.body || 'New version available'
         };
-        return versionData;
       } catch (e) {
-        console.warn('GitHub API JSON parse failed:', e);
+        console.warn('Failed to parse GitHub API response:', e);
       }
     }
 
     // Fallback to version.json
+    console.log('Falling back to version.json...');
     const versionResponse = await fetch(GITHUB_VERSION_URL);
+    
     if (versionResponse.ok) {
-      const text = await versionResponse.text();
       try {
-        const data = JSON.parse(text);
-        versionData = {
-          ...versionData,
-          latestVersion: data.version,
-          needsUpdate: data.version > APP_VERSION,
-          downloadUrl: data.downloadUrl,
-          changelog: data.changelog
+        const versionData = await versionResponse.json();
+        return {
+          currentVersion: APP_VERSION,
+          latestVersion: versionData.version,
+          needsUpdate: versionData.version > APP_VERSION,
+          downloadUrl: versionData.downloadUrl || null,
+          changelog: versionData.changelog || 'Update available'
         };
       } catch (e) {
-        console.warn('version.json parse failed:', e);
+        console.warn('Failed to parse version.json:', e);
       }
     }
   } catch (error) {
     console.error('Version check error:', error);
   }
 
-  return versionData;
+  return fallbackResponse;
 };
-// Splash Screen Component
+
 function SplashScreen() {
   return (
     <View style={styles.splashContainer}>
@@ -98,14 +102,6 @@ function SplashScreen() {
   );
 }
 
-// Tab Content Components
-
-
-
-
-
-
-// Error Boundary Component
 class ErrorBoundary extends React.Component {
   state = { hasError: false };
 
@@ -125,7 +121,6 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-// Bottom Tabs Navigator
 const Tab = createBottomTabNavigator();
 
 function MainTabs() {
@@ -135,12 +130,8 @@ function MainTabs() {
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
 
-     if (route.name === 'Home') {
+          if (route.name === 'Home') {
             iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Profile') {
-            iconName = focused ? 'person' : 'person-outline';
-          } else if (route.name === 'Settings') {
-            iconName = focused ? 'settings' : 'settings-outline';
           } else if (route.name === 'Download') {
             iconName = focused ? 'download' : 'download-outline';
           } else if (route.name === 'Browser') {
@@ -151,14 +142,7 @@ function MainTabs() {
             iconName = 'circle';
           }
 
-          return (
-            <Ionicons
-              name={iconName}
-              size={size}
-              color={color}
-              accessibilityLabel={`${route.name} tab icon`}
-            />
-          );
+          return <Ionicons name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: AppTheme.colors.primary,
         tabBarInactiveTintColor: 'gray',
@@ -170,19 +154,15 @@ function MainTabs() {
       <Tab.Screen name="Download" component={DownloadScreen} />
       <Tab.Screen name="Browser" component={Browser} />
       <Tab.Screen name="Playlist" component={Playlist} />
-
-
     </Tab.Navigator>
   );
 }
 
-// Main App Component
 function App() {
   const [isSplashVisible, setIsSplashVisible] = useState(true);
-const [versionInfo, setVersionInfo] = useState(null);
-console.log("versionInfo",versionInfo);
+  const [versionInfo, setVersionInfo] = useState(null);
 
-    useEffect(() => {
+  useEffect(() => {
     const initializeApp = async () => {
       const versionData = await checkVersion();
       setVersionInfo(versionData);
@@ -215,15 +195,13 @@ console.log("versionInfo",versionInfo);
 
   return (
     <SafeAreaProvider>
-
-    <ErrorBoundary>
-      <NavigationContainer theme={AppTheme}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" hidden={false} />
-        {isSplashVisible ? <SplashScreen /> : <MainTabs />}
-      </NavigationContainer>
-    </ErrorBoundary>
+      <ErrorBoundary>
+        <NavigationContainer theme={AppTheme}>
+          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" hidden={false} />
+          {isSplashVisible ? <SplashScreen /> : <MainTabs />}
+        </NavigationContainer>
+      </ErrorBoundary>
     </SafeAreaProvider>
-
   );
 }
 
@@ -239,29 +217,6 @@ const styles = StyleSheet.create({
     width: 150,
     height: 150,
     marginBottom: 20,
-  },
-  loadingText: {
-    fontSize: 18,
-    color: '#666666',
-    marginTop: 16,
-  },
-  tabContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F5F5F5',
-    paddingHorizontal: 16,
-  },
-  tabHeader: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333333',
-  },
-  tabDescription: {
-    fontSize: 16,
-    color: '#666666',
-    marginTop: 8,
-    textAlign: 'center',
   },
   errorContainer: {
     flex: 1,
