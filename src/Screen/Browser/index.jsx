@@ -85,21 +85,9 @@ const Browser = ({ route, navigation }) => {
 
   await NativeModules.PythonModule.setCookies(cookies);
 
-    const formattedCookies = Object.entries(nativeCookies).map(([name, obj]) => {
-      return [
-        obj.domain || '.youtube.com',
-        obj.hostOnly ? 'FALSE' : 'TRUE',
-        obj.path || '/',
-        obj.secure ? 'TRUE' : 'FALSE',
-        obj.expires ? Math.floor(new Date(obj.expires).getTime() / 1000) : Math.floor(Date.now() / 1000) + 7 * 24 * 3600,
-        name,
-        obj.value
-      ].join('\t');
-    }).join('\n');
+    
 
-    const downloadsPath = `${RNFS.DownloadDirectoryPath}/youtube_all_cookies.txt`;
-    await RNFS.writeFile(downloadsPath, formattedCookies, 'utf8');
-    showMessage(`All cookies saved!`);
+   
   } catch (error) {
     console.error(error);
     showMessage('Error saving all cookies');
