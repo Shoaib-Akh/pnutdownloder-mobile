@@ -14,6 +14,7 @@ import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
 import com.facebook.soloader.SoLoader
+import com.pnutdownloader.FFmpegPackage // Add this line
 
 class MainApplication : Application(), ReactApplication {
 
@@ -25,6 +26,8 @@ class MainApplication : Application(), ReactApplication {
                     add(CustomPackage())
                     add(PythonPackage())
                     add(RNFSPackage())
+                    add(FFmpegPackage())
+
                     // Add any other non-autolinked packages here
                 }
 

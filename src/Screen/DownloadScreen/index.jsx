@@ -20,7 +20,25 @@ import base64 from 'react-native-base64';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { getFFmpegVersion } from '../../../utils/FFmpegService';
+
 const DownloadScreen = ({ route }) => {
+  const testFFmpeg = async () => {
+  try {
+    const version = await getFFmpegVersion();
+    console.log('Full FFmpeg version info:');
+    console.log(version); // This will show the actual version output
+    
+    // Or display it in your UI
+  } catch (error) {
+    console.error('FFmpeg test failed:', error);
+  }
+};
+useEffect(()=>{
+
+testFFmpeg();
+
+},[])
   const { PythonModule } = NativeModules;
 
   const { downloadedUrl } = route.params || {};
@@ -182,7 +200,14 @@ const fetchVideoData = async () => {
     fetchVideoData();
   }, [downloadedUrl]);
 
+const checkFFmpeg = async () => {
+  console.log("FFmpeg test:");
 
+  const result = await PythonModule.testFfmpeg(); // you define this in Python
+  console.log("FFmpeg test:", result);
+};
+
+useEffect(()=>{checkFFmpeg},[])
   const blobToBase64 = (blob) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -212,96 +237,177 @@ const handleDownload = async (formatType, quality) => {
   progressAnim.setValue(0);
 
   try {
-    const baseDownloadDir = `${RNFS.DownloadDirectoryPath}/PNutDownloader`;
-    if (!await RNFS.exists(baseDownloadDir)) {
-      await RNFS.mkdir(baseDownloadDir);
+    // 1. FFmpeg setup with better error handling
+    const ffmpegDest = `${RNFS.DocumentDirectoryPath}/ffmpeg`;
+    console.log("FFmpeg destination path:", ffmpegDest);
+
+    let ffmpegAvailable = false;
+    if (!await RNFS.exists(ffmpegDest)) {
+      try {
+        await RNFS.copyFileAssets('ffmpeg', ffmpegDest);
+        await RNFS.chmod(ffmpegDest, 0o755); // Make executable
+        console.log("FFmpeg copied and made executable");
+        ffmpegAvailable = true;
+      } catch (copyError) {
+        console.warn("FFmpeg setup failed:", copyError);
+        Alert.alert('Warning', 
+          'FFmpeg not available - some features may be limited. Downloads will continue with basic functionality.');
+      }
+    } else {
+      ffmpegAvailable = true;
     }
 
+    if (ffmpegAvailable) {
+      try {
+        await PythonModule.setFfmpegPath(ffmpegDest);
+      } catch (e) {
+        console.warn("FFmpeg registration failed:", e);
+      }
+    }
+
+    // 2. Create download directory with better error handling
+    const baseDownloadDir = `${RNFS.DownloadDirectoryPath}/PNutDownloader`;
     const subFolder = formatType === 'video' ? 'Videos' : 'Audio';
     const downloadDir = `${baseDownloadDir}/${subFolder}`;
-    if (!await RNFS.exists(downloadDir)) {
+
+    try {
+      await RNFS.mkdir(baseDownloadDir);
       await RNFS.mkdir(downloadDir);
+    } catch (dirError) {
+      console.log("Directory creation error (may already exist):", dirError);
     }
 
-    // Set up progress callback
-    const progressCallback = (progress) => {
-      setDownloadProgress(progress);
-      Animated.timing(progressAnim, {
-        toValue: progress / 100,
-        duration: 100,
-        useNativeDriver: false,
-      }).start();
-    };
+    // 3. Set up progress callback (UNCOMMENT THIS)
+    // const progressCallback = (progress) => {
+    //   setDownloadProgress(progress);
+    //   Animated.timing(progressAnim, {
+    //     toValue: progress / 100,
+    //     duration: 100,
+    //     useNativeDriver: false,
+    //   }).start();
+    // };
 
-    // Register the progress callback
-    await PythonModule.setProgressCallback(progressCallback);
-    const result = await PythonModule.downloadVideo(
+    // await PythonModule.setProgressCallback(progressCallback);
+
+    // 4. Start download with timeout
+    console.log("Starting download...");
+    const downloadPromise = PythonModule.downloadVideo(
       downloadedUrl,
       formatType,
       quality,
       downloadDir
     );
 
-    const data = JSON.parse(result);
+    // Add timeout (30 seconds)
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Download timeout')), 30000)
+    );
+
+    const result = await Promise.race([downloadPromise, timeoutPromise]);
+    const data = typeof result === 'string' ? JSON.parse(result) : result;
+
     console.log("Download result:", data);
 
     if (data.error) {
-      throw new Error(data.error);
+      throw new Error(data.error || 'Unknown download error');
     }
 
+    // 5. Post-download processing
     if (Platform.OS === 'android') {
-      await RNFS.scanFile(data.filepath);
+      try {
+        await RNFS.scanFile(data.filepath);
+      } catch (e) {
+        console.warn("Media scan failed:", e);
+      }
     }
 
-    // Save download info to local storage
+    // Save download info with size validation
     try {
+      const stats = await RNFS.stat(data.filepath);
+      if (stats.size < 1024) { // 1KB minimum size check
+        throw new Error('Downloaded file is too small, may be corrupted');
+      }
+
       const downloadInfo = {
-        id: Date.now().toString(),
-        title: videoData?.snippet?.title || data.title || 'Unknown',
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        title: data.title,
         filepath: data.filepath,
         type: formatType,
         quality: quality,
         date: new Date().toISOString(),
-        thumbnail: videoData?.snippet?.thumbnails?.medium?.url,
-        channel: videoData?.snippet?.channelTitle,
-        duration: videoData?.contentDetails?.duration,
+        thumbnail: data.thumbnail || videoInfo?.thumbnail,
+        duration: data.duration || videoInfo?.duration,
+        size: stats.size,
         url: downloadedUrl,
-        size: data.size || 0,
       };
 
-      const existingDownloads = await AsyncStorage.getItem(STORAGE_KEY);
-      let downloads = existingDownloads ? JSON.parse(existingDownloads) : [];
+      const existingDownloads = await AsyncStorage.getItem(STORAGE_KEY) || '[]';
+      const downloads = JSON.parse(existingDownloads);
       downloads.unshift(downloadInfo);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(downloads));
-      
-      console.log('Download saved to storage:', downloadInfo);
-    } catch (storageError) {
-      console.error('Error saving download to storage:', storageError);
+
+      Alert.alert(
+        'Download Complete',
+        `${data.title} (${formatSize(stats.size)}) saved successfully!`,
+        [
+          { text: 'OK' },
+       
+          { 
+            text: 'View History', 
+            onPress: () => navigation.navigate('Playlist') 
+          }
+        ]
+      );
+
+    } catch (e) {
+      console.error("Post-download processing error:", e);
+      throw new Error('Failed to complete download: ' + e.message);
     }
 
+  } catch (err) {
+    console.error("Download error:", err);
     Alert.alert(
-      'Download Complete',
-      `${data.title} saved successfully!`,
+      'Download Failed',
+      err.message || 'Download could not be completed',
       [
         { text: 'OK' },
-        
-        {
-          text: 'View History',
-          onPress: () => navigation.navigate('Playlist')
+        { 
+          text: 'Retry', 
+          onPress: () => handleDownload(formatType, quality) 
         }
       ]
     );
-  } catch (err) {
-    console.error("Download error:", err);
-    Alert.alert('Error', err.message || 'Download failed');
   } finally {
     setIsDownloading(false);
     setCurrentDownload(null);
     try {
       await PythonModule.removeProgressCallback();
     } catch (e) {
-      console.error("Error removing progress callback:", e);
+      console.error("Error removing callback:", e);
     }
+  }
+};
+
+// Helper function
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// Helper functions
+const parseYoutubeDuration = (duration) => {
+  // Implement ISO 8601 duration parsing or use a library
+  return 0; // Placeholder
+};
+
+const getFileSize = async (filepath) => {
+  try {
+    const stats = await RNFS.stat(filepath);
+    return stats.size;
+  } catch (e) {
+    console.error("Could not get file size:", e);
+    return 0;
   }
 };
 

@@ -6,11 +6,12 @@ buildscript {
         targetSdkVersion = 35
         ndkVersion = "27.1.12297006"
         kotlinVersion = "2.0.21"
-        
+
     }
     repositories {
         google()
         mavenCentral()
+ 
                 maven { url 'https://www.jitpack.io' }
 
     }
@@ -21,6 +22,16 @@ buildscript {
     classpath ('com.google.gms:google-services:4.4.2')
         classpath "com.chaquo.python:gradle:16.1.0" // Use latest version
 
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        flatDir {
+            dirs "$rootDir/libs"
+        }
     }
 }
 

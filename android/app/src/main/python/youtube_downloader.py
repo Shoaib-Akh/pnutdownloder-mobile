@@ -5,6 +5,8 @@ import tempfile
 import time
 import logging
 import isodate
+import stat
+import subprocess
 
 import googleapiclient.discovery
 import googleapiclient.errors
@@ -16,11 +18,12 @@ class YoutubeDownloader:
     def __init__(self):
         self.progress_callback = None
         self.cookies_path = None
+        self.ffmpeg_path = None
         self.logs = []
         self.callback_lock = Lock()
         self._setup_logger()
         self._create_cookies_file()
-
+         
     def _setup_logger(self):
         self.logger = logging.getLogger('YoutubeDownloader')
         self.logger.setLevel(logging.DEBUG)
@@ -37,6 +40,37 @@ class YoutubeDownloader:
         handler = MemoryLogHandler(self.logs)
         handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         self.logger.addHandler(handler)
+
+    def set_ffmpeg_path(self, path: str) -> bool:
+        """Set the path to the FFmpeg binary and verify it's executable."""
+        try:
+            if not path or not os.path.exists(path):
+                self._log(f"FFmpeg path does not exist: {path}")
+                return False
+                
+            # Verify the file is executable
+            mode = os.stat(path).st_mode
+            if not (mode & stat.S_IXUSR):
+                self._log("FFmpeg is not executable, setting permissions...")
+                os.chmod(path, 0o755)  # rwxr-xr-x
+                
+            self.ffmpeg_path = path
+            self._log(f"FFmpeg path set to: {path}")
+            return True
+        except Exception as e:
+            self._log(f"Error setting FFmpeg path: {str(e)}")
+            return False
+
+    def _get_ffmpeg_path(self) -> Optional[str]:
+        """Get the verified FFmpeg path if available."""
+        if self.ffmpeg_path and os.path.exists(self.ffmpeg_path):
+            try:
+                if os.access(self.ffmpeg_path, os.X_OK):
+                    return self.ffmpeg_path
+                self._log("FFmpeg exists but is not executable")
+            except Exception as e:
+                self._log(f"Error checking FFmpeg permissions: {str(e)}")
+        return None
 
     def _log(self, message):
         self.logger.debug(message)
@@ -240,61 +274,118 @@ class YoutubeDownloader:
 
     def download_video(self, url: str, format_type: str, quality: str, download_dir: Optional[str] = None) -> Dict[str, Any]:
         try:
-            self._log(f"Starting download for URL: {url}, format: {format_type}, quality: {quality}")
+            ffmpeg_path = self._get_ffmpeg_path()
+            self._log(f"FFmpeg available: {ffmpeg_path is not None}")
 
             download_dir = download_dir or os.path.join(os.path.expanduser('~'), 'PNutDownloader')
             os.makedirs(download_dir, exist_ok=True)
-            self._log(f"Using download directory: {download_dir}")
 
             ydl_opts = {
                 'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
                 'quiet': True,
                 'progress_hooks': [self._progress_hook],
                 'cookiefile': self.cookies_path,
-                'ignoreerrors': True,
-                'postprocessors': [],
-                'merge_output_format': None,
                 'logger': self.logger,
+                'noplaylist': True,
+                'restrictfilenames': True,
+                'retries': 3,
             }
 
+            # Handle different formats
             if format_type == 'video':
-                ydl_opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]'
-                self._log("Setting format to best MP4 video")
+                if ffmpeg_path:
+                    ydl_opts.update({
+                        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                        'merge_output_format': 'mp4',
+                        'ffmpeg_location': ffmpeg_path,
+                    })
+                else:
+                    ydl_opts['format'] = 'best[ext=mp4]/best'
+                    self._log("FFmpeg not available - downloading single format")
+                    
             elif format_type == 'audio':
-                ydl_opts['format'] = 'bestaudio[ext=m4a]/bestaudio'
-                ydl_opts['extractaudio'] = True
-                ydl_opts['postprocessors'] = [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }]
-                self._log("Setting format to best audio (MP3)")
-            else:
-                result = {'error': 'Invalid format type'}
-                self._log(f"Returning error: {result}")
-                return result
+                if ffmpeg_path:
+                    ydl_opts.update({
+                        'format': 'bestaudio/best',
+                        'postprocessors': [{
+                            'key': 'FFmpegExtractAudio',
+                            'preferredcodec': 'mp3',
+                            'preferredquality': quality.replace('kbps', ''),
+                        }],
+                        'ffmpeg_location': ffmpeg_path,
+                    })
+                else:
+                    ydl_opts['format'] = 'bestaudio[ext=m4a]/bestaudio'
+                    self._log("FFmpeg not available - downloading m4a instead of mp3")
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
+                if not info:
+                    raise Exception("Failed to extract video info")
+
                 filepath = ydl.prepare_filename(info)
+                if not os.path.exists(filepath):
+                    base_path = os.path.splitext(filepath)[0]
+                    for ext in ['.mp4', '.mkv', '.webm', '.m4a', '.mp3']:
+                        if os.path.exists(base_path + ext):
+                            filepath = base_path + ext
+                            break
+
+                if not os.path.exists(filepath):
+                    raise Exception("Downloaded file not found")
+
+                try:
+                    size = os.path.getsize(filepath)
+                except Exception as e:
+                    self._log(f"Could not get file size: {str(e)}")
+                    size = 0
 
                 result = {
                     'filepath': filepath,
                     'filename': os.path.basename(filepath),
                     'title': info.get('title', ''),
-                    'logs': self.logs,
+                    'size': size,
+                    'duration': info.get('duration', 0),
+                    'thumbnail': info.get('thumbnail', ''),
+                    'logs': self.logs[-100:],
                 }
-                self._log(f"Download completed successfully: {result}")
                 return result
+
         except Exception as e:
-            result = {'error': str(e), 'logs': self.logs}
-            self._log(f"Download failed: {result}")
-            return result
+            self._log(f"Download failed: {str(e)}")
+            return {'error': str(e), 'logs': self.logs[-100:]}
+
+    def test_ffmpeg(self) -> str:
+        try:
+            if not self.ffmpeg_path:
+                return "FFmpeg path not set"
+            
+            output = subprocess.check_output([self.ffmpeg_path, "-version"], stderr=subprocess.STDOUT)
+            return output.decode('utf-8', errors='replace')
+        except subprocess.CalledProcessError as e:
+            self._log(f"FFmpeg test failed with return code {e.returncode}: {e.output.decode('utf-8', errors='replace')}")
+            return f"Error: {e.output.decode('utf-8', errors='replace')}"
+        except Exception as e:
+            self._log(f"FFmpeg test failed: {str(e)}")
+            return f"Error: {str(e)}"
 
 
 # Bridge functions
 def create_downloader():
     return YoutubeDownloader()
+
+def set_ffmpeg_path(downloader: YoutubeDownloader, path: str) -> bool:
+    result = downloader.set_ffmpeg_path(path)
+    downloader._log(f"set_ffmpeg_path result: {result}")
+    return result
+
+def set_progress_callback(downloader: YoutubeDownloader, callback: Callable[[float], None]):
+    downloader.set_progress_callback(callback)
+    downloader._log("Progress callback set")
+
+def remove_progress_callback(downloader: YoutubeDownloader):
+    downloader.remove_progress_callback()
+    downloader._log("Progress callback removed")
 
 def set_cookies(downloader: YoutubeDownloader, cookies: str) -> bool:
     result = downloader.set_cookies(cookies)
@@ -310,3 +401,8 @@ def download_video(downloader: YoutubeDownloader, url: str, format_type: str, qu
     result = downloader.download_video(url, format_type, quality, download_dir)
     downloader._log(f"download_video result: {result}")
     return json.dumps(result)
+
+def test_ffmpeg(downloader: YoutubeDownloader) -> str:
+    result = downloader.test_ffmpeg()
+    downloader._log(f"test_ffmpeg result: {result}")
+    return result

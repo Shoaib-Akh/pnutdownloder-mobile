@@ -1,35 +1,36 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 
 const HomeScreen = ({navigation}) => {
+
  const platforms = {
   youtube: {
     icon: 'logo-youtube',
     color: '#FF0000',
     url: 'https://www.youtube.com',
   },
-  facebook: {
-    icon: 'logo-facebook',
-    color: '#3b5998',
-    url: 'https://www.facebook.com',
-  },
-  instagram: {
-    icon: 'logo-instagram',
-    color: '#C13584',
-    url: 'https://www.instagram.com',
-  },
-  tiktok: {
-    icon: 'logo-tiktok',
-    color: '#010101',
-    url: 'https://www.tiktok.com',
-  },
-  twitter: {
-    icon: 'logo-twitter',
-    color: '#1DA1F2',
-    url: 'https://www.twitter.com',
-  },
+  // facebook: {
+  //   icon: 'logo-facebook',
+  //   color: '#3b5998',
+  //   url: 'https://www.facebook.com',
+  // },
+  // instagram: {
+  //   icon: 'logo-instagram',
+  //   color: '#C13584',
+  //   url: 'https://www.instagram.com',
+  // },
+  // tiktok: {
+  //   icon: 'logo-tiktok',
+  //   color: '#010101',
+  //   url: 'https://www.tiktok.com',
+  // },
+  // twitter: {
+  //   icon: 'logo-twitter',
+  //   color: '#1DA1F2',
+  //   url: 'https://www.twitter.com',
+  // },
 };
 
   return (

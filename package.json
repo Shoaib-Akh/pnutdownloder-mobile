@@ -1,6 +1,6 @@
 {
     "name": "pnutdownloader",
-    "version": "1.0.12",
+    "version": "1.0.13",
     "private": true,
     "scripts": {
         "android": "react-native run-android",
@@ -10,7 +10,8 @@
         "ios": "react-native run-ios",
         "lint": "eslint .",
         "start": "react-native start",
-        "test": "jest"
+        "test": "jest",
+        "postinstall": "cd android && ./gradlew :app:downloadAar"
     },
     "dependencies": {
         "@react-native-async-storage/async-storage": "^1.24.0",

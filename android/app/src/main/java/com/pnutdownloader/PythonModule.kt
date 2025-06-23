@@ -11,6 +11,10 @@ import android.util.Log
 
 class PythonModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     
+    companion object {
+        private const val TAG = "PythonModule"
+    }
+
     private val py by lazy {
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(reactContext))
@@ -25,6 +29,19 @@ class PythonModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
     override fun getName(): String = "PythonModule"
 
     @ReactMethod
+    fun setFfmpegPath(path: String, promise: Promise) {
+        try {
+            val result = py.getModule("youtube_downloader")
+                .callAttr("set_ffmpeg_path", downloader, path)
+            promise.resolve(result.toBoolean())
+            Log.d(TAG, "FFmpeg path set successfully: $path")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting FFmpeg path", e)
+            promise.reject("SET_FFMPEG_ERROR", "Failed to set FFmpeg path: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
     fun setProgressCallback(callback: Callback) {
         try {
             py.getModule("youtube_downloader").callAttr(
@@ -32,8 +49,9 @@ class PythonModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
                 downloader,
                 callback
             )
+            Log.d(TAG, "Progress callback set successfully")
         } catch (e: Exception) {
-            Log.e("PythonModule", "Error setting progress callback", e)
+            Log.e(TAG, "Error setting progress callback", e)
         }
     }
 
@@ -44,8 +62,9 @@ class PythonModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
                 "remove_progress_callback", 
                 downloader
             )
+            Log.d(TAG, "Progress callback removed successfully")
         } catch (e: Exception) {
-            Log.e("PythonModule", "Error removing progress callback", e)
+            Log.e(TAG, "Error removing progress callback", e)
         }
     }
 
@@ -53,6 +72,7 @@ class PythonModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
     fun setCookies(cookies: String, promise: Promise) {
         try {
             if (cookies.isBlank()) {
+                Log.w(TAG, "Empty cookies provided")
                 promise.resolve(false)
                 return
             }
@@ -60,7 +80,9 @@ class PythonModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
             val result = py.getModule("youtube_downloader")
                 .callAttr("set_cookies", downloader, cookies)
             promise.resolve(result.toBoolean())
+            Log.d(TAG, "Cookies set successfully")
         } catch (e: Exception) {
+            Log.e(TAG, "Error setting cookies", e)
             promise.reject("SET_COOKIES_ERROR", "Failed to set cookies: ${e.message}", e)
         }
     }
@@ -68,11 +90,18 @@ class PythonModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
     @ReactMethod
     fun getVideoInfo(url: String, promise: Promise) {
         try {
+            if (url.isBlank()) {
+                promise.reject("INVALID_URL", "URL cannot be empty")
+                return
+            }
+
             val result = py.getModule("youtube_downloader")
                 .callAttr("get_video_info", downloader, url)
             promise.resolve(result.toString())
+            Log.d(TAG, "Video info retrieved successfully")
         } catch (e: Exception) {
-            promise.reject("GET_INFO_ERROR", e)
+            Log.e(TAG, "Error getting video info", e)
+            promise.reject("GET_INFO_ERROR", "Failed to get video info: ${e.message}", e)
         }
     }
 
@@ -85,6 +114,16 @@ class PythonModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
         promise: Promise
     ) {
         try {
+            if (url.isBlank()) {
+                promise.reject("INVALID_URL", "URL cannot be empty")
+                return
+            }
+
+            if (formatType !in listOf("video", "audio")) {
+                promise.reject("INVALID_FORMAT", "Format must be either 'video' or 'audio'")
+                return
+            }
+
             val result = py.getModule("youtube_downloader").callAttr(
                 "download_video",
                 downloader,
@@ -94,17 +133,33 @@ class PythonModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
                 downloadDir
             )
             promise.resolve(result.toString())
+            Log.d(TAG, "Video downloaded successfully")
         } catch (e: Exception) {
-            promise.reject("DOWNLOAD_ERROR", e)
+            Log.e(TAG, "Error downloading video", e)
+            promise.reject("DOWNLOAD_ERROR", "Failed to download video: ${e.message}", e)
         }
     }
 
     @ReactMethod
     fun cleanup(promise: Promise) {
         try {
+            // Add any cleanup logic here if needed
             promise.resolve(true)
+            Log.d(TAG, "Cleanup completed successfully")
         } catch (e: Exception) {
-            promise.reject("CLEANUP_ERROR", e)
+            Log.e(TAG, "Error during cleanup", e)
+            promise.reject("CLEANUP_ERROR", "Failed to cleanup: ${e.message}", e)
         }
+    }
+
+    // Add this method to expose constants to React Native
+    override fun getConstants(): Map<String, Any> {
+        return mapOf(
+            "SUPPORTED_FORMATS" to arrayOf("video", "audio"),
+            "DEFAULT_QUALITIES" to mapOf(
+                "video" to arrayOf("144p", "240p", "360p", "480p", "720p", "1080p"),
+                "audio" to arrayOf("64kbps", "128kbps", "192kbps", "256kbps", "320kbps")
+            )
+        )
     }
 }
