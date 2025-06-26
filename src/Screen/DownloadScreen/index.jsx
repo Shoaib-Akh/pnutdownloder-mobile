@@ -127,35 +127,6 @@ testFFmpeg();
   };
 
   useEffect(() => {
-    // const fetchVideoData = async () => {
-    //   if (!downloadedUrl) {
-    //     setError('No video URL provided');
-    //     setLoading(false);
-    //     return;
-    //   }
-
-    //   try {
-    //     const videoId = extractVideoId(downloadedUrl);
-    //     if (!videoId) {
-    //       setError('Invalid YouTube URL');
-    //       setLoading(false);
-    //       return;
-    //     }
-
-    //     setLoading(true);
-    //     const response = await axios.post(`${BACKEND_URL}/video-info`, { url: downloadedUrl });
-    //     if (response.data.items?.length > 0) {
-    //       setVideoData(response.data.items[0]);
-    //     } else {
-    //       setError('Video not found');
-    //     }
-    //   } catch (err) {
-    //     console.error('Error fetching video data:', err);
-    //     setError('Failed to load video data. Please try again.');
-    //   } finally {
-    //     setLoading(false);
-    //   }
-    // };
 const fetchVideoData = async () => {
   console.log("downloadedUrl",downloadedUrl);
   
@@ -307,83 +278,76 @@ const handleDownload = async (formatType, quality) => {
     // Merging logic with enhanced logging
     // Merging logic with enhanced logging
 if (formatType === 'video') {
-      console.log("Attempting to merge video/audio streams...");
-      
-      const files = await RNFS.readDir(downloadDir);
-      const videoFile = files.find(f => f.name.endsWith('.f606.mp4') || f.name.endsWith('.mp4'));
-      const audioFile = files.find(f => f.name.endsWith('.f140.m4a') || f.name.endsWith('.m4a'));
+  console.log("Attempting to merge video/audio streams...");
+  
+  const files = await RNFS.readDir(downloadDir);
+  const videoFile = files.find(f => f.name.endsWith('.f606.mp4') || f.name.endsWith('.mp4'));
+  const audioFile = files.find(f => f.name.endsWith('.f140.m4a') || f.name.endsWith('.m4a'));
 
-      if (!videoFile || !audioFile) {
-        console.warn("Cannot find both video and audio files for merging");
-        return;
-      }
+  if (!videoFile || !audioFile) {
+    console.warn("Cannot find both video and audio files for merging");
+    return;
+  }
 
-      // Sanitize title for filesystem
-      const cleanTitle = data.title
-        .replace(/[^\w\s.-]/gi, '_') // Replace special chars except dots and dashes
-        .replace(/\s+/g, '_')        // Replace spaces with underscores
-        .substring(0, 100);          // Limit length
+  // Sanitize title for filename
+  const cleanTitle = data.title
+    .replace(/[^\w\s.-]/gi, '_') // Replace special chars except dots and dashes
+    .replace(/\s+/g, '_')        // Replace spaces with underscores
+    .substring(0, 100);          // Limit length
 
-      const outputDir = `${downloadDir}/${cleanTitle}`;
-      const outputPath = `${outputDir}/${cleanTitle}.mp4`;
+  const outputPath = `${downloadDir}/${cleanTitle}.mp4`;
 
-      console.log("File paths:", {
-        videoPath: videoFile.path,
-        audioPath: audioFile.path,
-        outputDir,
-        outputPath
-      });
+  console.log("File paths:", {
+    videoPath: videoFile.path,
+    audioPath: audioFile.path,
+    outputPath
+  });
 
-      try {
-        // Create output directory
-        await RNFS.mkdir(outputDir).catch(() => {
-          console.log("Directory may already exist");
-        });
+  try {
+    // Verify input files
+    const [videoExists, audioExists] = await Promise.all([
+      RNFS.exists(videoFile.path),
+      RNFS.exists(audioFile.path)
+    ]);
 
-        // Verify input files
-        const [videoExists, audioExists] = await Promise.all([
-          RNFS.exists(videoFile.path),
-          RNFS.exists(audioFile.path)
-        ]);
-
-        if (!videoExists || !audioExists) {
-          throw new Error('Input files missing for merging');
-        }
-
-        // Build FFmpeg command as array (no quotes needed when passing as array)
-        const ffmpegCommand = [
-          '-i', videoFile.path,
-          '-i', audioFile.path,
-          '-c:v', 'copy',
-          '-c:a', 'aac',
-          '-strict', 'experimental',
-          outputPath
-        ];
-
-        console.log("Executing FFmpeg command:", ffmpegCommand.join(' '));
-        
-        // Execute command
-        const result = await executeFFmpegCommand(ffmpegCommand);
-        console.log("FFmpeg merge result:", result);
-
-        // Verify output
-        const mergedExists = await RNFS.exists(outputPath);
-        if (!mergedExists) {
-          throw new Error('Merge completed but output file not found');
-        }
-
-        // Delete temp files
-        await Promise.all([
-          RNFS.unlink(videoFile.path),
-          RNFS.unlink(audioFile.path)
-        ]);
-
-        data.filePath = outputPath;
-      } catch (mergeError) {
-        console.error("Merge process failed:", mergeError);
-        throw new Error(`Video merge failed: ${mergeError.message}`);
-      }
+    if (!videoExists || !audioExists) {
+      throw new Error('Input files missing for merging');
     }
+
+    // Build FFmpeg command
+    const ffmpegCommand = [
+      '-i', videoFile.path,
+      '-i', audioFile.path,
+      '-c:v', 'copy',
+      '-c:a', 'aac',
+      '-strict', 'experimental',
+      outputPath
+    ];
+
+    console.log("Executing FFmpeg command:", ffmpegCommand.join(' '));
+    
+    // Execute command
+    const result = await executeFFmpegCommand(ffmpegCommand);
+    console.log("FFmpeg merge result:", result);
+
+    // Verify output
+    const mergedExists = await RNFS.exists(outputPath);
+    if (!mergedExists) {
+      throw new Error('Merge completed but output file not found');
+    }
+
+    // Delete temp files
+    await Promise.all([
+      RNFS.unlink(videoFile.path),
+      RNFS.unlink(audioFile.path)
+    ]);
+
+    data.filePath = outputPath;
+  } catch (mergeError) {
+    console.error("Merge process failed:", mergeError);
+    throw new Error(`Video merge failed: ${mergeError.message}`);
+  }
+}
 
     // Prepare download info for storage
     const downloadInfo = {
@@ -460,20 +424,9 @@ function formatSize(bytes) {
 }
 
 // Helper functions
-const parseYoutubeDuration = (duration) => {
-  // Implement ISO 8601 duration parsing or use a library
-  return 0; // Placeholder
-};
 
-const getFileSize = async (filepath) => {
-  try {
-    const stats = await RNFS.stat(filepath);
-    return stats.size;
-  } catch (e) {
-    console.error("Could not get file size:", e);
-    return 0;
-  }
-};
+
+
 
 
   const videoQualities = [
