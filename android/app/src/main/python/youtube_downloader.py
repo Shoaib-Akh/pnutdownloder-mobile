@@ -272,6 +272,8 @@ class YoutubeDownloader:
             self._log(f"Error getting info without cookies: {str(e)}")
             return None
 
+  
+
     def download_video(self, url: str, format_type: str, quality: str, download_dir: Optional[str] = None) -> Dict[str, Any]:
         try:
             ffmpeg_path = self._get_ffmpeg_path()
@@ -289,22 +291,20 @@ class YoutubeDownloader:
                 'noplaylist': True,
                 'restrictfilenames': True,
                 'retries': 3,
+                'ignoreerrors': True,
+
             }
 
             # Handle different formats
             if format_type == 'video':
-                if ffmpeg_path:
                     ydl_opts.update({
-                        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                        'format': f'bestvideo[height<={quality.replace("p", "")}][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
                         'merge_output_format': 'mp4',
                         'ffmpeg_location': ffmpeg_path,
                     })
-                else:
-                    ydl_opts['format'] = 'best[ext=mp4]/best'
-                    self._log("FFmpeg not available - downloading single format")
+             
                     
             elif format_type == 'audio':
-                if ffmpeg_path:
                     ydl_opts.update({
                         'format': 'bestaudio/best',
                         'postprocessors': [{
@@ -314,9 +314,7 @@ class YoutubeDownloader:
                         }],
                         'ffmpeg_location': ffmpeg_path,
                     })
-                else:
-                    ydl_opts['format'] = 'bestaudio[ext=m4a]/bestaudio'
-                    self._log("FFmpeg not available - downloading m4a instead of mp3")
+               
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
@@ -331,20 +329,20 @@ class YoutubeDownloader:
                             filepath = base_path + ext
                             break
 
-                if not os.path.exists(filepath):
-                    raise Exception("Downloaded file not found")
+                # if not os.path.exists(filepath):
+                #     raise Exception("Downloaded file not found")
 
-                try:
-                    size = os.path.getsize(filepath)
-                except Exception as e:
-                    self._log(f"Could not get file size: {str(e)}")
-                    size = 0
+                # try:
+                    # size = os.path.getsize(filepath)
+                # except Exception as e:
+                    # self._log(f"Could not get file size: {str(e)}")
+                    # size = 0
 
                 result = {
-                    'filepath': filepath,
-                    'filename': os.path.basename(filepath),
+                    # 'filepath': filepath,
+                    # 'filename': os.path.basename(filepath),
                     'title': info.get('title', ''),
-                    'size': size,
+                    # 'size': size,
                     'duration': info.get('duration', 0),
                     'thumbnail': info.get('thumbnail', ''),
                     'logs': self.logs[-100:],
@@ -354,7 +352,6 @@ class YoutubeDownloader:
         except Exception as e:
             self._log(f"Download failed: {str(e)}")
             return {'error': str(e), 'logs': self.logs[-100:]}
-
     def test_ffmpeg(self) -> str:
         try:
             if not self.ffmpeg_path:

@@ -20,7 +20,7 @@ import base64 from 'react-native-base64';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getFFmpegVersion } from '../../../utils/FFmpegService';
+import { executeFFmpegCommand, getFFmpegVersion } from '../../../utils/FFmpegService';
 
 const DownloadScreen = ({ route }) => {
   const testFFmpeg = async () => {
@@ -224,148 +224,209 @@ const STORAGE_KEY = '@PNutDownloader/downloads';
 
 const handleDownload = async (formatType, quality) => {
   if (isDownloading) {
+    console.log('Download already in progress - aborting');
     Alert.alert('Info', 'A download is already in progress.');
     return;
   }
 
   const hasPermission = await requestStoragePermission();
-  if (!hasPermission) return;
+  if (!hasPermission) {
+    console.log('Storage permission denied');
+    return;
+  }
 
+  console.log('Starting download process...');
   setIsDownloading(true);
   setCurrentDownload({ formatType, quality });
-  setDownloadProgress(0);
-  progressAnim.setValue(0);
 
   try {
-    // 1. FFmpeg setup with better error handling
+    // FFmpeg setup with detailed logging
     const ffmpegDest = `${RNFS.DocumentDirectoryPath}/ffmpeg`;
     console.log("FFmpeg destination path:", ffmpegDest);
 
     let ffmpegAvailable = false;
     if (!await RNFS.exists(ffmpegDest)) {
-      try {
-        await RNFS.copyFileAssets('ffmpeg', ffmpegDest);
-        await RNFS.chmod(ffmpegDest, 0o755); // Make executable
-        console.log("FFmpeg copied and made executable");
-        ffmpegAvailable = true;
-      } catch (copyError) {
-        console.warn("FFmpeg setup failed:", copyError);
-        Alert.alert('Warning', 
-          'FFmpeg not available - some features may be limited. Downloads will continue with basic functionality.');
-      }
+      console.log('FFmpeg not found - attempting to copy from assets');
+     
     } else {
       ffmpegAvailable = true;
+      console.log("FFmpeg already exists and is executable");
     }
 
-    if (ffmpegAvailable) {
-      try {
-        await PythonModule.setFfmpegPath(ffmpegDest);
-      } catch (e) {
-        console.warn("FFmpeg registration failed:", e);
-      }
-    }
-
-    // 2. Create download directory with better error handling
+    // Create download directory with error handling
     const baseDownloadDir = `${RNFS.DownloadDirectoryPath}/PNutDownloader`;
     const subFolder = formatType === 'video' ? 'Videos' : 'Audio';
     const downloadDir = `${baseDownloadDir}/${subFolder}`;
 
+    console.log(`Creating directories: ${baseDownloadDir} and ${downloadDir}`);
     try {
       await RNFS.mkdir(baseDownloadDir);
       await RNFS.mkdir(downloadDir);
+      console.log("Download directories created successfully");
     } catch (dirError) {
       console.log("Directory creation error (may already exist):", dirError);
     }
 
-    // 3. Set up progress callback (UNCOMMENT THIS)
-    // const progressCallback = (progress) => {
-    //   setDownloadProgress(progress);
-    //   Animated.timing(progressAnim, {
-    //     toValue: progress / 100,
-    //     duration: 100,
-    //     useNativeDriver: false,
-    //   }).start();
-    // };
+    console.log("Initiating Python download...", {
+      url: downloadedUrl,
+      formatType,
+      quality,
+      downloadDir
+    });
 
-    // await PythonModule.setProgressCallback(progressCallback);
-
-    // 4. Start download with timeout
-    console.log("Starting download...");
-    const downloadPromise = PythonModule.downloadVideo(
+    const result = await PythonModule.downloadVideo(
       downloadedUrl,
       formatType,
       quality,
       downloadDir
     );
-
-    // Add timeout (30 seconds)
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Download timeout')), 30000)
-    );
-
-    const result = await Promise.race([downloadPromise, timeoutPromise]);
+    
     const data = typeof result === 'string' ? JSON.parse(result) : result;
-
-    console.log("Download result:", data);
+    console.log("Download result:", JSON.stringify(data, null, 2));
 
     if (data.error) {
+      console.error("Download error from Python:", data.error);
       throw new Error(data.error || 'Unknown download error');
     }
 
-    // 5. Post-download processing
-    if (Platform.OS === 'android') {
-      try {
-        await RNFS.scanFile(data.filepath);
-      } catch (e) {
-        console.warn("Media scan failed:", e);
-      }
-    }
-
-    // Save download info with size validation
+    // Debug: List all files in download directory
     try {
-      const stats = await RNFS.stat(data.filepath);
-      if (stats.size < 1024) { // 1KB minimum size check
-        throw new Error('Downloaded file is too small, may be corrupted');
+      const files = await RNFS.readDir(downloadDir);
+      console.log("filesfiles",files);
+      
+      console.log("Files in download directory:", files.map(f => ({
+        name: f.name,
+        path: f.path,
+        size: f.size,
+        isFile: f.isFile()
+      })));
+    } catch (listError) {
+      console.error("Failed to list download directory:", listError);
+    }
+
+    // Merging logic with enhanced logging
+    // Merging logic with enhanced logging
+if (formatType === 'video') {
+      console.log("Attempting to merge video/audio streams...");
+      
+      const files = await RNFS.readDir(downloadDir);
+      const videoFile = files.find(f => f.name.endsWith('.f606.mp4') || f.name.endsWith('.mp4'));
+      const audioFile = files.find(f => f.name.endsWith('.f140.m4a') || f.name.endsWith('.m4a'));
+
+      if (!videoFile || !audioFile) {
+        console.warn("Cannot find both video and audio files for merging");
+        return;
       }
 
-      const downloadInfo = {
-        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        title: data.title,
-        filepath: data.filepath,
-        type: formatType,
-        quality: quality,
-        date: new Date().toISOString(),
-        thumbnail: data.thumbnail || videoInfo?.thumbnail,
-        duration: data.duration || videoInfo?.duration,
-        size: stats.size,
-        url: downloadedUrl,
-      };
+      // Sanitize title for filesystem
+      const cleanTitle = data.title
+        .replace(/[^\w\s.-]/gi, '_') // Replace special chars except dots and dashes
+        .replace(/\s+/g, '_')        // Replace spaces with underscores
+        .substring(0, 100);          // Limit length
 
-      const existingDownloads = await AsyncStorage.getItem(STORAGE_KEY) || '[]';
-      const downloads = JSON.parse(existingDownloads);
-      downloads.unshift(downloadInfo);
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(downloads));
+      const outputDir = `${downloadDir}/${cleanTitle}`;
+      const outputPath = `${outputDir}/${cleanTitle}.mp4`;
 
-      Alert.alert(
-        'Download Complete',
-        `${data.title} (${formatSize(stats.size)}) saved successfully!`,
-        [
-          { text: 'OK' },
-       
-          { 
-            text: 'View History', 
-            onPress: () => navigation.navigate('Playlist') 
-          }
-        ]
-      );
+      console.log("File paths:", {
+        videoPath: videoFile.path,
+        audioPath: audioFile.path,
+        outputDir,
+        outputPath
+      });
 
-    } catch (e) {
-      console.error("Post-download processing error:", e);
-      throw new Error('Failed to complete download: ' + e.message);
+      try {
+        // Create output directory
+        await RNFS.mkdir(outputDir).catch(() => {
+          console.log("Directory may already exist");
+        });
+
+        // Verify input files
+        const [videoExists, audioExists] = await Promise.all([
+          RNFS.exists(videoFile.path),
+          RNFS.exists(audioFile.path)
+        ]);
+
+        if (!videoExists || !audioExists) {
+          throw new Error('Input files missing for merging');
+        }
+
+        // Build FFmpeg command as array (no quotes needed when passing as array)
+        const ffmpegCommand = [
+          '-i', videoFile.path,
+          '-i', audioFile.path,
+          '-c:v', 'copy',
+          '-c:a', 'aac',
+          '-strict', 'experimental',
+          outputPath
+        ];
+
+        console.log("Executing FFmpeg command:", ffmpegCommand.join(' '));
+        
+        // Execute command
+        const result = await executeFFmpegCommand(ffmpegCommand);
+        console.log("FFmpeg merge result:", result);
+
+        // Verify output
+        const mergedExists = await RNFS.exists(outputPath);
+        if (!mergedExists) {
+          throw new Error('Merge completed but output file not found');
+        }
+
+        // Delete temp files
+        await Promise.all([
+          RNFS.unlink(videoFile.path),
+          RNFS.unlink(audioFile.path)
+        ]);
+
+        data.filePath = outputPath;
+      } catch (mergeError) {
+        console.error("Merge process failed:", mergeError);
+        throw new Error(`Video merge failed: ${mergeError.message}`);
+      }
     }
+
+    // Prepare download info for storage
+    const downloadInfo = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      title: data.title,
+      type: formatType,
+      quality: quality,
+      date: new Date().toISOString(),
+      thumbnail: data.thumbnail || videoInfo?.thumbnail,
+      duration: data.duration || videoInfo?.duration,
+      url: downloadedUrl,
+      filePath: data.filePath || 
+               `${downloadDir}/${data.title.replace(/[^\w\s]/gi, '_')}.${formatType === 'video' ? 'mp4' : 'mp3'}`
+    };
+
+    console.log("Prepared download info:", downloadInfo);
+
+    // Save to storage
+    const existingDownloads = await AsyncStorage.getItem(STORAGE_KEY) || '[]';
+    const downloads = JSON.parse(existingDownloads);
+    downloads.unshift(downloadInfo);
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(downloads));
+    console.log("Download saved to history");
+
+    Alert.alert(
+      'Download Complete',
+      `${data.title} saved successfully!`,
+      [
+        { text: 'OK' },
+        { 
+          text: 'View History', 
+          onPress: () => navigation.navigate('Playlist') 
+        }
+      ]
+    );
 
   } catch (err) {
-    console.error("Download error:", err);
+    console.error("Download process failed:", {
+      error: err,
+      message: err.message,
+      stack: err.stack
+    });
+    
     Alert.alert(
       'Download Failed',
       err.message || 'Download could not be completed',
@@ -378,10 +439,13 @@ const handleDownload = async (formatType, quality) => {
       ]
     );
   } finally {
+    console.log("Cleaning up download state...");
     setIsDownloading(false);
     setCurrentDownload(null);
+    
     try {
       await PythonModule.removeProgressCallback();
+      console.log("Python callback removed");
     } catch (e) {
       console.error("Error removing callback:", e);
     }

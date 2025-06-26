@@ -1,9 +1,14 @@
 import { NativeModules, Platform } from 'react-native';
 const { FFmpegModule } = NativeModules;
 
-export const executeFFmpegCommand = async (command) => {
+export const executeFFmpegCommand = async (commandParts) => {
   try {
-    if (!command) {
+    // Handle both string and array input
+    const command = Array.isArray(commandParts) 
+      ? commandParts.join(' ') 
+      : commandParts;
+
+    if (!command || command.trim() === '') {
       throw new Error('FFmpeg command cannot be empty');
     }
 
@@ -22,7 +27,7 @@ export const executeFFmpegCommand = async (command) => {
     };
   } catch (error) {
     console.error('FFmpeg command failed:', {
-      command,
+      command: commandParts,
       error: error.message,
       stack: error.stack
     });
@@ -69,4 +74,18 @@ export const checkFFmpegCapabilities = async () => {
       error: error.message
     };
   }
+};
+
+// Helper function for common operations
+export const mergeVideoAudio = async (videoPath, audioPath, outputPath) => {
+  const command = [
+    '-i', videoPath,
+    '-i', audioPath,
+    '-c:v', 'copy',
+    '-c:a', 'aac',
+    '-strict', 'experimental',
+    outputPath
+  ];
+
+  return executeFFmpegCommand(command);
 };
