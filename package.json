@@ -1,6 +1,6 @@
 {
     "name": "pnutdownloader",
-    "version": "1.0.13",
+    "version": "1.0.14",
     "private": true,
     "scripts": {
         "android": "react-native run-android",
@@ -21,10 +21,8 @@
         "@react-navigation/drawer": "^7.3.12",
         "@react-navigation/native": "^7.1.9",
         "@react-navigation/native-stack": "^7.3.13",
-        "axios": "^1.9.0",
         "react": "19.0.0",
         "react-native": "0.79.2",
-        "react-native-base64": "^0.2.1",
         "react-native-fs": "^2.20.0",
         "react-native-gesture-handler": "^2.25.0",
         "react-native-permissions": "^5.4.0",

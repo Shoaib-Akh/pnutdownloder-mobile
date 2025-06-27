@@ -77,7 +77,7 @@ const PlayList = () => {
               <View style={styles.downloadInfo}>
                 <Text style={styles.downloadTitle} numberOfLines={1}>{item.title}</Text>
                 <Text style={styles.downloadDetails}>
-                  {item.type} • {item.quality} • {formatDuration(item.duration)}
+                  {item.type} • {item.quality} 
                 </Text>
                 <Text style={styles.downloadDetails}>
                   {item.channel} • {formatDate(item.date)}

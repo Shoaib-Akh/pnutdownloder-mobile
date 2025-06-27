@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState,useRef } from 'react';
 import {
   View,
   Text,
@@ -13,10 +13,8 @@ import {
   Linking,
   NativeModules
 } from 'react-native';
-import axios from 'axios';
 import RNFS from 'react-native-fs';
 import { check, request, PERMISSIONS, RESULTS, openSettings } from 'react-native-permissions';
-import base64 from 'react-native-base64';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -48,7 +46,16 @@ testFFmpeg();
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [currentDownload, setCurrentDownload] = useState(null);
-  const progressAnim = new Animated.Value(0);
+const progressAnim = useRef(new Animated.Value(0)).current;
+useEffect(() => {
+  Animated.spring(progressAnim, {
+    toValue: downloadProgress,
+    tension: 30, // Makes the animation more springy
+    friction: 8, // Controls how quickly the animation settles
+    useNativeDriver: false, // Required for width animations
+  }).start();
+}, [downloadProgress]);
+
   const BACKEND_URL = 'http://192.168.1.4:5001';
 
   const requestStoragePermission = async () => {
@@ -208,148 +215,98 @@ const handleDownload = async (formatType, quality) => {
 
   console.log('Starting download process...');
   setIsDownloading(true);
+  setDownloadProgress(5); // Start
   setCurrentDownload({ formatType, quality });
 
   try {
-    // FFmpeg setup with detailed logging
+    // FFmpeg path setup
     const ffmpegDest = `${RNFS.DocumentDirectoryPath}/ffmpeg`;
     console.log("FFmpeg destination path:", ffmpegDest);
 
-    let ffmpegAvailable = false;
     if (!await RNFS.exists(ffmpegDest)) {
       console.log('FFmpeg not found - attempting to copy from assets');
-     
     } else {
-      ffmpegAvailable = true;
       console.log("FFmpeg already exists and is executable");
     }
 
-    // Create download directory with error handling
+    // Folder setup
     const baseDownloadDir = `${RNFS.DownloadDirectoryPath}/PNutDownloader`;
     const subFolder = formatType === 'video' ? 'Videos' : 'Audio';
     const downloadDir = `${baseDownloadDir}/${subFolder}`;
+    await RNFS.mkdir(baseDownloadDir).catch(() => {});
+    await RNFS.mkdir(downloadDir).catch(() => {});
+    console.log("Folders ensured.");
+    setDownloadProgress(10); // Folder setup done
 
-    console.log(`Creating directories: ${baseDownloadDir} and ${downloadDir}`);
-    try {
-      await RNFS.mkdir(baseDownloadDir);
-      await RNFS.mkdir(downloadDir);
-      console.log("Download directories created successfully");
-    } catch (dirError) {
-      console.log("Directory creation error (may already exist):", dirError);
-    }
-
-    console.log("Initiating Python download...", {
-      url: downloadedUrl,
-      formatType,
-      quality,
-      downloadDir
-    });
-
+    console.log("Initiating Python download...");
     const result = await PythonModule.downloadVideo(
       downloadedUrl,
       formatType,
       quality,
       downloadDir
     );
-    
+    setDownloadProgress(30); // Python download called
+
     const data = typeof result === 'string' ? JSON.parse(result) : result;
-    console.log("Download result:", JSON.stringify(data, null, 2));
+    console.log("Download result:", data);
 
-    if (data.error) {
-      console.error("Download error from Python:", data.error);
-      throw new Error(data.error || 'Unknown download error');
+    if (data.error) throw new Error(data.error || 'Unknown error');
+
+    const files = await RNFS.readDir(downloadDir);
+    console.log("Files in folder:", files);
+
+    setDownloadProgress(40); // Downloaded files listed
+
+    if (formatType === 'video') {
+      console.log("Trying to merge video/audio...");
+
+      const videoFile = files.find(f => f.name.endsWith('.f606.mp4') || f.name.endsWith('.mp4'));
+      const audioFile = files.find(f => f.name.endsWith('.f140.m4a') || f.name.endsWith('.m4a'));
+
+      if (!videoFile || !audioFile) {
+        throw new Error("Missing video or audio files for merging.");
+      }
+
+      setDownloadProgress(50); // Found video/audio
+
+      const cleanTitle = data.title
+        .replace(/[^\w\s.-]/gi, '_')
+        .replace(/\s+/g, '_')
+        .substring(0, 80);
+      const uniqueId = Date.now(); // add unique ID
+      const outputPath = `${downloadDir}/${cleanTitle}_${uniqueId}.mp4`;
+
+      console.log("Merging files:", {
+        video: videoFile.path,
+        audio: audioFile.path,
+        output: outputPath,
+      });
+
+      const ffmpegCommand = [
+        '-i', videoFile.path,
+        '-i', audioFile.path,
+        '-c:v', 'copy',
+        '-c:a', 'aac',
+        '-strict', 'experimental',
+        outputPath
+      ];
+
+      setDownloadProgress(60); // Starting merge
+
+      const mergeResult = await executeFFmpegCommand(ffmpegCommand);
+      console.log("FFmpeg done:", mergeResult);
+
+      const mergedExists = await RNFS.exists(outputPath);
+      if (!mergedExists) throw new Error('Merged file not found');
+
+      await RNFS.unlink(videoFile.path).catch(() => {});
+      await RNFS.unlink(audioFile.path).catch(() => {});
+      data.filePath = outputPath;
+
+      setDownloadProgress(80); // Merge done
     }
 
-    // Debug: List all files in download directory
-    try {
-      const files = await RNFS.readDir(downloadDir);
-      console.log("filesfiles",files);
-      
-      console.log("Files in download directory:", files.map(f => ({
-        name: f.name,
-        path: f.path,
-        size: f.size,
-        isFile: f.isFile()
-      })));
-    } catch (listError) {
-      console.error("Failed to list download directory:", listError);
-    }
-
-    // Merging logic with enhanced logging
-    // Merging logic with enhanced logging
-if (formatType === 'video') {
-  console.log("Attempting to merge video/audio streams...");
-  
-  const files = await RNFS.readDir(downloadDir);
-  const videoFile = files.find(f => f.name.endsWith('.f606.mp4') || f.name.endsWith('.mp4'));
-  const audioFile = files.find(f => f.name.endsWith('.f140.m4a') || f.name.endsWith('.m4a'));
-
-  if (!videoFile || !audioFile) {
-    console.warn("Cannot find both video and audio files for merging");
-    return;
-  }
-
-  // Sanitize title for filename
-  const cleanTitle = data.title
-    .replace(/[^\w\s.-]/gi, '_') // Replace special chars except dots and dashes
-    .replace(/\s+/g, '_')        // Replace spaces with underscores
-    .substring(0, 100);          // Limit length
-
-  const outputPath = `${downloadDir}/${cleanTitle}.mp4`;
-
-  console.log("File paths:", {
-    videoPath: videoFile.path,
-    audioPath: audioFile.path,
-    outputPath
-  });
-
-  try {
-    // Verify input files
-    const [videoExists, audioExists] = await Promise.all([
-      RNFS.exists(videoFile.path),
-      RNFS.exists(audioFile.path)
-    ]);
-
-    if (!videoExists || !audioExists) {
-      throw new Error('Input files missing for merging');
-    }
-
-    // Build FFmpeg command
-    const ffmpegCommand = [
-      '-i', videoFile.path,
-      '-i', audioFile.path,
-      '-c:v', 'copy',
-      '-c:a', 'aac',
-      '-strict', 'experimental',
-      outputPath
-    ];
-
-    console.log("Executing FFmpeg command:", ffmpegCommand.join(' '));
-    
-    // Execute command
-    const result = await executeFFmpegCommand(ffmpegCommand);
-    console.log("FFmpeg merge result:", result);
-
-    // Verify output
-    const mergedExists = await RNFS.exists(outputPath);
-    if (!mergedExists) {
-      throw new Error('Merge completed but output file not found');
-    }
-
-    // Delete temp files
-    await Promise.all([
-      RNFS.unlink(videoFile.path),
-      RNFS.unlink(audioFile.path)
-    ]);
-
-    data.filePath = outputPath;
-  } catch (mergeError) {
-    console.error("Merge process failed:", mergeError);
-    throw new Error(`Video merge failed: ${mergeError.message}`);
-  }
-}
-
-    // Prepare download info for storage
+    // Finalizing download info
     const downloadInfo = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       title: data.title,
@@ -359,62 +316,53 @@ if (formatType === 'video') {
       thumbnail: data.thumbnail || videoInfo?.thumbnail,
       duration: data.duration || videoInfo?.duration,
       url: downloadedUrl,
-      filePath: data.filePath || 
-               `${downloadDir}/${data.title.replace(/[^\w\s]/gi, '_')}.${formatType === 'video' ? 'mp4' : 'mp3'}`
+      filePath: data.filePath || `${downloadDir}/${data.title.replace(/[^\w\s]/gi, '_')}_${Date.now()}.${formatType === 'video' ? 'mp4' : 'mp3'}`
     };
 
-    console.log("Prepared download info:", downloadInfo);
-
-    // Save to storage
     const existingDownloads = await AsyncStorage.getItem(STORAGE_KEY) || '[]';
     const downloads = JSON.parse(existingDownloads);
     downloads.unshift(downloadInfo);
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(downloads));
-    console.log("Download saved to history");
+    console.log("Saved to history.");
+
+    setDownloadProgress(100); // Done!
 
     Alert.alert(
       'Download Complete',
       `${data.title} saved successfully!`,
       [
         { text: 'OK' },
-        { 
-          text: 'View History', 
-          onPress: () => navigation.navigate('Playlist') 
+        {
+          text: 'View History',
+          onPress: () => navigation.navigate('Playlist')
         }
       ]
     );
 
   } catch (err) {
-    console.error("Download process failed:", {
-      error: err,
-      message: err.message,
-      stack: err.stack
-    });
-    
+    console.error("Error:", err);
     Alert.alert(
       'Download Failed',
       err.message || 'Download could not be completed',
       [
         { text: 'OK' },
-        { 
-          text: 'Retry', 
-          onPress: () => handleDownload(formatType, quality) 
+        {
+          text: 'Retry',
+          onPress: () => handleDownload(formatType, quality)
         }
       ]
     );
   } finally {
-    console.log("Cleaning up download state...");
     setIsDownloading(false);
     setCurrentDownload(null);
-    
     try {
       await PythonModule.removeProgressCallback();
-      console.log("Python callback removed");
     } catch (e) {
-      console.error("Error removing callback:", e);
+      console.error("Callback removal error:", e);
     }
   }
 };
+
 
 // Helper function
 function formatSize(bytes) {
@@ -430,7 +378,7 @@ function formatSize(bytes) {
 
 
   const videoQualities = [
-    { quality: '1920p', premium: true },
+    { quality: '1920p', premium: false },
     { quality: '1280p', premium: false },
     { quality: '852p', premium: false },
     { quality: '640p', premium: false },
@@ -439,7 +387,7 @@ function formatSize(bytes) {
   ];
 
   const audioQualities = [
-    { quality: '320kbps', premium: true },
+    { quality: '320kbps', premium: false },
     { quality: '256kbps', premium: false },
     { quality: '128kbps', premium: false },
     { quality: '64kbps', premium: false },
@@ -505,20 +453,46 @@ function formatSize(bytes) {
     <Text style={styles.downloadTitle}>
       Downloading {currentDownload?.formatType} ({currentDownload?.quality})
     </Text>
-    <View style={styles.progressBar}>
+    
+    {/* Progress bar container */}
+    <View style={styles.progressBarContainer}>
       <Animated.View 
         style={[
           styles.progressFill, 
           { 
-            width: interpolateProgress,
-            backgroundColor: downloadProgress < 100 ? '#4caf50' : '#2196F3'
+            width: progressAnim.interpolate({
+              inputRange: [0, 100],
+              outputRange: ['0%', '100%'],
+            }),
+            backgroundColor: progressAnim.interpolate({
+              inputRange: [0, 50, 100],
+              outputRange: ['#ff5722', '#ff9800', '#4caf50'],
+            }),
           }
         ]} 
       />
     </View>
-    <Text style={styles.progressText}>
+    
+    {/* Progress text with animation */}
+    <Animated.Text 
+      style={[
+        styles.progressText,
+        {
+          opacity: progressAnim.interpolate({
+            inputRange: [0, 100],
+            outputRange: [0.5, 1],
+          }),
+          transform: [{
+            scale: progressAnim.interpolate({
+              inputRange: [0, 100],
+              outputRange: [0.9, 1.1],
+            }),
+          }],
+        }
+      ]}
+    >
       {Math.round(downloadProgress)}% - {downloadProgress < 100 ? 'Downloading...' : 'Processing...'}
-    </Text>
+    </Animated.Text>
   </View>
 )}
 
@@ -712,6 +686,39 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 20,
     fontStyle: 'italic',
+  },
+    downloadContainer: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 8,
+    marginVertical: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  progressBarContainer: {
+    height: 15,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginBottom: 8,
+    elevation: 1,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  progressText: {
+    textAlign: 'center',
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
   },
 });
 

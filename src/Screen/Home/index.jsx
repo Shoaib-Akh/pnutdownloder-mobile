@@ -1,42 +1,45 @@
-import React, { useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, ScrollView, Clipboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 
 const HomeScreen = ({navigation}) => {
+  const [url, setUrl] = useState('');
+  
+  const platforms = {
+    youtube: {
+      icon: 'logo-youtube',
+      color: '#FF0000',
+      url: 'https://www.youtube.com',
+    },
+  };
 
- const platforms = {
-  youtube: {
-    icon: 'logo-youtube',
-    color: '#FF0000',
-    url: 'https://www.youtube.com',
-  },
-  // facebook: {
-  //   icon: 'logo-facebook',
-  //   color: '#3b5998',
-  //   url: 'https://www.facebook.com',
-  // },
-  // instagram: {
-  //   icon: 'logo-instagram',
-  //   color: '#C13584',
-  //   url: 'https://www.instagram.com',
-  // },
-  // tiktok: {
-  //   icon: 'logo-tiktok',
-  //   color: '#010101',
-  //   url: 'https://www.tiktok.com',
-  // },
-  // twitter: {
-  //   icon: 'logo-twitter',
-  //   color: '#1DA1F2',
-  //   url: 'https://www.twitter.com',
-  // },
-};
+  const handlePaste = async () => {
+    try {
+      const clipboardContent = await Clipboard.getString();
+      if (clipboardContent) {
+        setUrl(clipboardContent);
+        // Navigate to DownloadScreen with the pasted URL
+        navigation.navigate('Download', { downloadedUrl: clipboardContent });
+      } else {
+        alert('Clipboard is empty');
+      }
+    } catch (error) {
+      console.error('Error pasting from clipboard:', error);
+      alert('Failed to paste from clipboard');
+    }
+  };
+
+  const handleSearch = () => {
+    if (url.trim()) {
+      navigation.navigate('Download', { downloadedUrl: url });
+    } else {
+      alert('Please enter a URL');
+    }
+  };
 
   return (
     <SafeAreaView>
-    
-      {/* Header */}
       <View style={styles.header}>
         <Icon name="menu" size={30} color="#BB4F28" />
         <Text style={styles.title}>VidCombo</Text>
@@ -44,63 +47,53 @@ const HomeScreen = ({navigation}) => {
           <Text style={styles.upgradeText}>Upgrade ✨</Text>
         </TouchableOpacity>
       </View>
-<ScrollView style={styles.container}>
-      {/* Input Field */}
-      <View style={styles.inputContainer}>
-        <TextInput
-          placeholder="Paste video URL here"
-          placeholderTextColor="#999"
-          style={styles.input}
-        />
-        <TouchableOpacity style={styles.searchBtn}>
-          <Icon name="search" size={20} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      <Text style={styles.orText}>OR</Text>
-
-      <TouchableOpacity style={styles.pasteBtn}>
-        <Icon name="link-outline" size={20} color="#fff" />
-        <Text style={styles.pasteText}>Tap to paste link</Text>
-      </TouchableOpacity>
-
-      {/* Supported Platforms */}
-      <View style={styles.platformBox}>
-        <Text style={styles.sectionTitle}>Supported Platforms</Text>
-        <Text style={styles.sectionSubtitle}>
-          Download from all platforms – HD quality requires Premium
-        </Text>
-
-        <View style={styles.platforms}>
-  {Object.entries(platforms).map(([platform, data]) => (
-     <TouchableOpacity
-      key={platform}
-      onPress={() => navigation.navigate('Browser', { url: data.url })}
-    >
-    <Icon
-      key={platform}
-      name={data.icon}
-      size={30}
-      color="#fff"
-      style={[styles.platformIcon, { backgroundColor: data.color }]}
-    />
-    </TouchableOpacity>
-  ))}
-</View>
-
-
-        {/* Premium Box */}
-        {/* <View style={styles.premiumBox}>
-          <Text style={styles.premiumTitle}>HD Quality Downloads</Text>
-          <Text style={styles.premiumText}>
-            Unlock HD quality downloads from all platforms with Premium
-          </Text>
-          <TouchableOpacity style={styles.premiumBtn}>
-            <Text style={styles.premiumBtnText}>Get Premium →</Text>
+      
+      <ScrollView style={styles.container}>
+        {/* Input Field */}
+        <View style={styles.inputContainer}>
+          <TextInput
+            placeholder="Paste video URL here"
+            placeholderTextColor="#999"
+            style={styles.input}
+            value={url}
+            onChangeText={setUrl}
+          />
+          <TouchableOpacity style={styles.searchBtn} onPress={handleSearch}>
+            <Icon name="search" size={20} color="#fff" />
           </TouchableOpacity>
-        </View> */}
-      </View>
-    </ScrollView>
+        </View>
+
+        <Text style={styles.orText}>OR</Text>
+
+        <TouchableOpacity style={styles.pasteBtn} onPress={handlePaste}>
+          <Icon name="link-outline" size={20} color="#fff" />
+          <Text style={styles.pasteText}>Tap to paste link</Text>
+        </TouchableOpacity>
+
+        {/* Supported Platforms */}
+        <View style={styles.platformBox}>
+          <Text style={styles.sectionTitle}>Supported Platforms</Text>
+          <Text style={styles.sectionSubtitle}>
+            Download from all platforms – HD quality requires Premium
+          </Text>
+
+          <View style={styles.platforms}>
+            {Object.entries(platforms).map(([platform, data]) => (
+              <TouchableOpacity
+                key={platform}
+                onPress={() => navigation.navigate('Browser', { url: data.url })}
+              >
+                <Icon
+                  name={data.icon}
+                  size={30}
+                  color="#fff"
+                  style={[styles.platformIcon, { backgroundColor: data.color }]}
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 };
