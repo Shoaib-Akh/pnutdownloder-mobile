@@ -71,8 +71,8 @@ android {
 
 dependencies {
     implementation project(':react-native-fs')
-    implementation("com.google.firebase:firebase-analytics")
-    implementation(platform("com.google.firebase:firebase-bom:33.14.0"))
+    // implementation("com.google.firebase:firebase-analytics")
+    // implementation(platform("com.google.firebase:firebase-bom:33.14.0"))
     implementation("com.facebook.react:react-android")
     implementation project(':react-native-vector-icons')
     implementation(name: 'ffmpeg-kit-full-gpl', ext: 'aar')
