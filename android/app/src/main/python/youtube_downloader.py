@@ -310,7 +310,7 @@ class YoutubeDownloader:
                         'postprocessors': [{
                             'key': 'FFmpegExtractAudio',
                             'preferredcodec': 'mp3',
-                            'preferredquality': quality.replace('kbps', ''),
+                            'preferredquality': quality.replace('k', ''),
                         }],
                         'ffmpeg_location': ffmpeg_path,
                     })

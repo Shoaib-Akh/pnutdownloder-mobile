@@ -93,7 +93,7 @@ const installApk = async (apkPath) => {
   try {
     if (Platform.OS === 'android') {
       // For Android 8+ we need to use the FileProvider approach
-      if (Platform.Version >= 26) {
+      if (Platform.Version >= 33) {
         // Using NativeModules to handle the installation
         if (NativeModules.InstallApk) {
           NativeModules.InstallApk.install(apkPath);

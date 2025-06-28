@@ -19,24 +19,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { executeFFmpegCommand, getFFmpegVersion } from '../../../utils/FFmpegService';
+import { formatDuration } from '../../../utils/formatDuration';
 
 const DownloadScreen = ({ route }) => {
-  const testFFmpeg = async () => {
-  try {
-    const version = await getFFmpegVersion();
-    console.log('Full FFmpeg version info:');
-    console.log(version); // This will show the actual version output
-    
-    // Or display it in your UI
-  } catch (error) {
-    console.error('FFmpeg test failed:', error);
-  }
-};
-useEffect(()=>{
 
-testFFmpeg();
-
-},[])
   const { PythonModule } = NativeModules;
 
   const { downloadedUrl } = route.params || {};
@@ -56,76 +42,108 @@ useEffect(() => {
   }).start();
 }, [downloadProgress]);
 
-  const BACKEND_URL = 'http://192.168.1.4:5001';
 
-  const requestStoragePermission = async () => {
-    try {
-      let permissions = [];
+ const requestStoragePermission = async () => {
+  try {
+    let permissionToCheck;
+    let permissionToRequest;
 
-      if (Platform.OS === 'android') {
-        if (Platform.Version >= 33) {
-          // Android 13+: Request granular media permissions
-          permissions = [
-            PERMISSIONS.ANDROID.READ_MEDIA_IMAGES,
-            PERMISSIONS.ANDROID.READ_MEDIA_VIDEO,
-            PERMISSIONS.ANDROID.READ_MEDIA_AUDIO,
-          ];
-        } else if (Platform.Version >= 30) {
-          // Android 11+: Check MANAGE_EXTERNAL_STORAGE
+    if (Platform.OS === 'android') {
+      if (Platform.Version >= 33) {
+        // Android 13+ (API 33+) - Use granular media permissions
+        permissionToCheck = PERMISSIONS.ANDROID.READ_MEDIA_VIDEO;
+        permissionToRequest = PERMISSIONS.ANDROID.READ_MEDIA_VIDEO;
+      } else if (Platform.Version >= 30) {
+        // Android 11+ (API 30+) - Try MANAGE_EXTERNAL_STORAGE first
+        try {
           const manageStorageResult = await check(PERMISSIONS.ANDROID.MANAGE_EXTERNAL_STORAGE);
-          if (manageStorageResult !== RESULTS.GRANTED) {
-            const requestResult = await request(PERMISSIONS.ANDROID.MANAGE_EXTERNAL_STORAGE);
-            if (requestResult !== RESULTS.GRANTED) {
-              Alert.alert(
-                'Permission Needed',
-                'Please allow "All files access" in Settings for this app.',
-                [
-                  { text: 'Open Settings', onPress: () => openSettings() },
-                  { text: 'Cancel', style: 'cancel' },
-                ]
-              );
-              return false;
-            }
+          if (manageStorageResult === RESULTS.GRANTED) {
+            return true;
           }
-          return true;
-        } else {
-          // Android 10 and below: Request legacy storage permissions
-          permissions = [
-            PERMISSIONS.ANDROID.READ_EXTERNAL_STORAGE,
-            PERMISSIONS.ANDROID.WRITE_EXTERNAL_STORAGE,
-          ];
-        }
-      } else if (Platform.OS === 'ios') {
-        permissions = [PERMISSIONS.IOS.PHOTO_LIBRARY];
-      }
 
-      // Check and request permissions
-      for (const permission of permissions) {
-        const result = await check(permission);
-        if (result !== RESULTS.GRANTED) {
-          const requestResult = await request(permission);
-          if (requestResult !== RESULTS.GRANTED) {
-            Alert.alert(
-              'Permission Required',
-              'Storage permission is required to save downloads. Please enable it in app settings.',
-              [
-                { text: 'Open Settings', onPress: () => openSettings() },
-                { text: 'Cancel', style: 'cancel' },
-              ]
-            );
-            return false;
+          const requestResult = await request(PERMISSIONS.ANDROID.MANAGE_EXTERNAL_STORAGE);
+          if (requestResult === RESULTS.GRANTED) {
+            return true;
           }
+        } catch (manageError) {
+          console.log('MANAGE_EXTERNAL_STORAGE not available, falling back to WRITE_EXTERNAL_STORAGE');
         }
+        
+        // Fall back to WRITE_EXTERNAL_STORAGE if MANAGE_EXTERNAL_STORAGE fails or isn't available
+        permissionToCheck = PERMISSIONS.ANDROID.WRITE_EXTERNAL_STORAGE;
+        permissionToRequest = PERMISSIONS.ANDROID.WRITE_EXTERNAL_STORAGE;
+      } else {
+        // Android 10 and below (API < 30) - Use WRITE_EXTERNAL_STORAGE
+        permissionToCheck = PERMISSIONS.ANDROID.WRITE_EXTERNAL_STORAGE;
+        permissionToRequest = PERMISSIONS.ANDROID.WRITE_EXTERNAL_STORAGE;
       }
+    } else if (Platform.OS === 'ios') {
+      // iOS - Use PHOTO_LIBRARY
+      permissionToCheck = PERMISSIONS.IOS.PHOTO_LIBRARY;
+      permissionToRequest = PERMISSIONS.IOS.PHOTO_LIBRARY;
+    }
 
-      console.log('All required permissions granted');
-      return true;
-    } catch (err) {
-      console.error('Permission error:', err);
-      Alert.alert('Error', 'Failed to request permissions. Please try again.');
+    // Validate we have permission constants
+    if (!permissionToCheck || !permissionToRequest) {
+      console.error('Could not determine appropriate permission for this platform/version');
       return false;
     }
-  };
+
+    // Check current permission status
+    const checkResult = await check(permissionToCheck);
+    console.log(`Permission check result: ${checkResult}`);
+
+    if (checkResult === RESULTS.GRANTED) {
+      return true;
+    }
+
+    // Request permission if not granted
+    const requestResult = await request(permissionToRequest);
+    console.log(`Permission request result: ${requestResult}`);
+
+    if (requestResult === RESULTS.GRANTED) {
+      return true;
+    }
+
+    // Handle denied permission
+    if (requestResult === RESULTS.DENIED) {
+      console.log('Permission denied');
+      return false;
+    }
+
+    // Handle blocked permission (show settings dialog)
+    if (requestResult === RESULTS.BLOCKED) {
+      Alert.alert(
+        'Permission Required',
+        'Storage permission is required to save downloads. Please enable it in app settings.',
+        [
+          { 
+            text: 'Open Settings', 
+            onPress: () => openSettings().catch(() => console.log('Cannot open settings'))
+          },
+          { 
+            text: 'Cancel', 
+            style: 'cancel' 
+          },
+        ],
+        { cancelable: false }
+      );
+      return false;
+    }
+
+    // Default return if none of the above cases match
+    return false;
+
+  } catch (err) {
+    console.error('Error in requestStoragePermission:', err);
+    Alert.alert(
+      'Permission Error',
+      'An error occurred while requesting permissions. Please try again.',
+      [{ text: 'OK' }]
+    );
+    return false;
+  }
+};
 
   const extractVideoId = (url) => {
     if (!url) return null;
@@ -178,25 +196,8 @@ const fetchVideoData = async () => {
     fetchVideoData();
   }, [downloadedUrl]);
 
-const checkFFmpeg = async () => {
-  console.log("FFmpeg test:");
 
-  const result = await PythonModule.testFfmpeg(); // you define this in Python
-  console.log("FFmpeg test:", result);
-};
 
-useEffect(()=>{checkFFmpeg},[])
-  const blobToBase64 = (blob) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64data = reader.result.split(',')[1];
-        resolve(base64data);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  };
 const navigation=useNavigation()
 const STORAGE_KEY = '@PNutDownloader/downloads';
 
@@ -207,6 +208,53 @@ const handleDownload = async (formatType, quality) => {
     return;
   }
 
+  // Check if this exact download already exists
+  try {
+    const existingDownloads = await AsyncStorage.getItem(STORAGE_KEY) || '[]';
+    const downloads = JSON.parse(existingDownloads);
+    
+    const existingDownload = downloads.find(download => 
+      download.url === downloadedUrl && 
+      download.type === formatType && 
+      download.quality === quality
+    );
+    
+    if (existingDownload) {
+      // Check if file still exists
+      try {
+        const fileExists = await RNFS.exists(existingDownload.filePath);
+        
+        Alert.alert(
+          'Download Exists',
+          `This ${formatType} (${quality}) has already been downloaded.${fileExists ? '' : '\n\nFile may have been deleted.'}`,
+          [
+            { text: 'OK' },
+            {
+              text: 'View in History',
+              onPress: () => navigation.navigate('Playlist')
+            },
+            !fileExists && {
+              text: 'Download Again',
+              onPress: () => proceedWithDownload(formatType, quality)
+            }
+          ].filter(Boolean) // Remove any falsey values from the array
+        );
+        return;
+      } catch (fileCheckError) {
+        console.log('Error checking file existence:', fileCheckError);
+        // Continue with download if check fails
+      }
+    }
+  } catch (err) {
+    console.error('Error checking existing downloads:', err);
+    // Continue with download even if check fails
+  }
+
+  // Proceed with download if no duplicate found or checks failed
+  await proceedWithDownload(formatType, quality);
+};
+
+const proceedWithDownload = async (formatType, quality) => {
   const hasPermission = await requestStoragePermission();
   if (!hasPermission) {
     console.log('Storage permission denied');
@@ -220,14 +268,6 @@ const handleDownload = async (formatType, quality) => {
 
   try {
     // FFmpeg path setup
-    const ffmpegDest = `${RNFS.DocumentDirectoryPath}/ffmpeg`;
-    console.log("FFmpeg destination path:", ffmpegDest);
-
-    if (!await RNFS.exists(ffmpegDest)) {
-      console.log('FFmpeg not found - attempting to copy from assets');
-    } else {
-      console.log("FFmpeg already exists and is executable");
-    }
 
     // Folder setup
     const baseDownloadDir = `${RNFS.DownloadDirectoryPath}/PNutDownloader`;
@@ -306,6 +346,50 @@ const handleDownload = async (formatType, quality) => {
       setDownloadProgress(80); // Merge done
     }
 
+    if (formatType === 'audio') {
+      console.log("Converting audio to mp3...");
+
+      const audioFile = files.find(f => f.name.endsWith('.m4a') || f.name.endsWith('.webm'));
+      if (!audioFile) throw new Error("Audio file not found for conversion.");
+
+      const cleanTitle = data.title
+        .replace(/[^\w\s.-]/gi, '_')
+        .replace(/\s+/g, '_')
+        .substring(0, 80);
+      const uniqueId = Date.now();
+      const outputPath = `${downloadDir}/${cleanTitle}_${uniqueId}_${quality}.mp3`;
+
+      // Map kbps to FFmpeg bitrate string
+      const bitrateMap = {
+        '320kbps': '320k',
+        '256kbps': '256k',
+        '128kbps': '128k',
+        '64kbps': '64k',
+      };
+      const selectedBitrate = bitrateMap[quality] || '128k'; // fallback
+
+      const ffmpegCommand = [
+        '-i', audioFile.path,
+        '-b:a', selectedBitrate,
+        '-vn', // no video
+        '-ar', '44100',
+        '-ac', '2',
+        outputPath,
+      ];
+
+      setDownloadProgress(60); // Starting conversion
+      const result = await executeFFmpegCommand(ffmpegCommand);
+      console.log("FFmpeg conversion result:", result);
+
+      const convertedExists = await RNFS.exists(outputPath);
+      if (!convertedExists) throw new Error("Converted audio file not found");
+
+      await RNFS.unlink(audioFile.path).catch(() => {});
+      data.filePath = outputPath;
+
+      setDownloadProgress(80); // Conversion done
+    }
+
     // Finalizing download info
     const downloadInfo = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -313,8 +397,9 @@ const handleDownload = async (formatType, quality) => {
       type: formatType,
       quality: quality,
       date: new Date().toISOString(),
-      thumbnail: data.thumbnail || videoInfo?.thumbnail,
-      duration: data.duration || videoInfo?.duration,
+      thumbnail: data.thumbnail || videoData?.snippet?.thumbnails?.medium?.url,
+      duration: videoData?.contentDetails?.duration,
+      channel: videoData?.snippet?.channelTitle,
       url: downloadedUrl,
       filePath: data.filePath || `${downloadDir}/${data.title.replace(/[^\w\s]/gi, '_')}_${Date.now()}.${formatType === 'video' ? 'mp4' : 'mp3'}`
     };
@@ -348,7 +433,7 @@ const handleDownload = async (formatType, quality) => {
         { text: 'OK' },
         {
           text: 'Retry',
-          onPress: () => handleDownload(formatType, quality)
+          onPress: () => proceedWithDownload(formatType, quality)
         }
       ]
     );
@@ -362,7 +447,6 @@ const handleDownload = async (formatType, quality) => {
     }
   }
 };
-
 
 // Helper function
 function formatSize(bytes) {
@@ -393,21 +477,7 @@ function formatSize(bytes) {
     { quality: '64kbps', premium: false },
   ];
 
-  const formatDuration = (duration) => {
-    if (!duration) return 'N/A';
-    const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-    const hours = parseInt(match[1]) || 0;
-    const minutes = parseInt(match[2]) || 0;
-    const seconds = parseInt(match[3]) || 0;
 
-    return [
-      hours ? `${hours}h ` : '',
-      minutes ? `${minutes}m ` : '',
-      seconds ? `${seconds}s` : '',
-    ]
-      .join('')
-      .trim() || 'N/A';
-  };
 
   const interpolateProgress = progressAnim.interpolate({
     inputRange: [0, 1],
