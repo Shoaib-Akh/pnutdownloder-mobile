@@ -26,6 +26,8 @@ const DownloadScreen = ({ route }) => {
   const { PythonModule } = NativeModules;
 
   const { downloadedUrl } = route.params || {};
+  console.log("downloadedUrldownloadedUrl",downloadedUrl);
+  
   const [videoData, setVideoData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -162,6 +164,7 @@ const fetchVideoData = async () => {
   }
 
   try {
+    setError("")
     setLoading(true);
     const result = await PythonModule.getVideoInfo(downloadedUrl);
     console.log("resultresult",result);
@@ -267,23 +270,28 @@ const proceedWithDownload = async (formatType, quality) => {
   setCurrentDownload({ formatType, quality });
 
   try {
-    // FFmpeg path setup
-
-    // Folder setup
+    // Create base directories
     const baseDownloadDir = `${RNFS.DownloadDirectoryPath}/PNutDownloader`;
     const subFolder = formatType === 'video' ? 'Videos' : 'Audio';
-    const downloadDir = `${baseDownloadDir}/${subFolder}`;
+    const finalDownloadDir = `${baseDownloadDir}/${subFolder}`;
+    
+    // Create temp directory inside cache
+    const tempDir = `${RNFS.CachesDirectoryPath}/PNutDownloader/temp_${Date.now()}`;
+    
+    // Ensure directories exist
     await RNFS.mkdir(baseDownloadDir).catch(() => {});
-    await RNFS.mkdir(downloadDir).catch(() => {});
-    console.log("Folders ensured.");
+    await RNFS.mkdir(finalDownloadDir).catch(() => {});
+    await RNFS.mkdir(tempDir).catch(() => {});
+    
+    console.log("Folders created. Temp dir:", tempDir);
     setDownloadProgress(10); // Folder setup done
 
-    console.log("Initiating Python download...");
+    console.log("Initiating Python download to temp folder...");
     const result = await PythonModule.downloadVideo(
       downloadedUrl,
       formatType,
       quality,
-      downloadDir
+      tempDir // Download to temp folder
     );
     setDownloadProgress(30); // Python download called
 
@@ -292,16 +300,28 @@ const proceedWithDownload = async (formatType, quality) => {
 
     if (data.error) throw new Error(data.error || 'Unknown error');
 
-    const files = await RNFS.readDir(downloadDir);
-    console.log("Files in folder:", files);
+    const tempFiles = await RNFS.readDir(tempDir);
+    console.log("Files in temp folder:", tempFiles);
 
     setDownloadProgress(40); // Downloaded files listed
 
-    if (formatType === 'video') {
-      console.log("Trying to merge video/audio...");
+    // Process files based on format type
+    let finalFilePath = '';
+    const cleanTitle = data.title
+      .replace(/[^\w\s.-]/gi, '_')
+      .replace(/\s+/g, '_')
+      .substring(0, 80);
+    const uniqueId = Date.now();
 
-      const videoFile = files.find(f => f.name.endsWith('.f606.mp4') || f.name.endsWith('.mp4'));
-      const audioFile = files.find(f => f.name.endsWith('.f140.m4a') || f.name.endsWith('.m4a'));
+    if (formatType === 'video') {
+      console.log("Processing video files...");
+
+      const videoFile = tempFiles.find(f => 
+        f.name.endsWith('.mp4') && !f.name.endsWith('.f140.mp4')
+      );
+      const audioFile = tempFiles.find(f => 
+        f.name.endsWith('.m4a') || f.name.endsWith('.f140.mp4')
+      );
 
       if (!videoFile || !audioFile) {
         throw new Error("Missing video or audio files for merging.");
@@ -309,17 +329,13 @@ const proceedWithDownload = async (formatType, quality) => {
 
       setDownloadProgress(50); // Found video/audio
 
-      const cleanTitle = data.title
-        .replace(/[^\w\s.-]/gi, '_')
-        .replace(/\s+/g, '_')
-        .substring(0, 80);
-      const uniqueId = Date.now(); // add unique ID
-      const outputPath = `${downloadDir}/${cleanTitle}_${uniqueId}.mp4`;
+      // Output path in final directory
+      finalFilePath = `${finalDownloadDir}/${cleanTitle}_${uniqueId}.mp4`;
 
       console.log("Merging files:", {
         video: videoFile.path,
         audio: audioFile.path,
-        output: outputPath,
+        output: finalFilePath,
       });
 
       const ffmpegCommand = [
@@ -328,36 +344,30 @@ const proceedWithDownload = async (formatType, quality) => {
         '-c:v', 'copy',
         '-c:a', 'aac',
         '-strict', 'experimental',
-        outputPath
+        finalFilePath
       ];
 
       setDownloadProgress(60); // Starting merge
+      await executeFFmpegCommand(ffmpegCommand);
+      console.log("FFmpeg merge completed");
 
-      const mergeResult = await executeFFmpegCommand(ffmpegCommand);
-      console.log("FFmpeg done:", mergeResult);
-
-      const mergedExists = await RNFS.exists(outputPath);
-      if (!mergedExists) throw new Error('Merged file not found');
-
-      await RNFS.unlink(videoFile.path).catch(() => {});
-      await RNFS.unlink(audioFile.path).catch(() => {});
-      data.filePath = outputPath;
+      // Verify merge was successful
+      if (!(await RNFS.exists(finalFilePath))) {
+        throw new Error('Merged file not found');
+      }
 
       setDownloadProgress(80); // Merge done
-    }
+    } 
+    else if (formatType === 'audio') {
+      console.log("Processing audio files...");
 
-    if (formatType === 'audio') {
-      console.log("Converting audio to mp3...");
-
-      const audioFile = files.find(f => f.name.endsWith('.m4a') || f.name.endsWith('.webm'));
+      const audioFile = tempFiles.find(f => 
+        f.name.endsWith('.m4a') || f.name.endsWith('.webm')
+      );
       if (!audioFile) throw new Error("Audio file not found for conversion.");
 
-      const cleanTitle = data.title
-        .replace(/[^\w\s.-]/gi, '_')
-        .replace(/\s+/g, '_')
-        .substring(0, 80);
-      const uniqueId = Date.now();
-      const outputPath = `${downloadDir}/${cleanTitle}_${uniqueId}_${quality}.mp3`;
+      // Output path in final directory
+      finalFilePath = `${finalDownloadDir}/${cleanTitle}_${uniqueId}_${quality}.mp3`;
 
       // Map kbps to FFmpeg bitrate string
       const bitrateMap = {
@@ -366,33 +376,37 @@ const proceedWithDownload = async (formatType, quality) => {
         '128kbps': '128k',
         '64kbps': '64k',
       };
-      const selectedBitrate = bitrateMap[quality] || '128k'; // fallback
+      const selectedBitrate = bitrateMap[quality] || '128k';
 
       const ffmpegCommand = [
         '-i', audioFile.path,
         '-b:a', selectedBitrate,
-        '-vn', // no video
+        '-vn',
         '-ar', '44100',
         '-ac', '2',
-        outputPath,
+        finalFilePath,
       ];
 
       setDownloadProgress(60); // Starting conversion
-      const result = await executeFFmpegCommand(ffmpegCommand);
-      console.log("FFmpeg conversion result:", result);
+      await executeFFmpegCommand(ffmpegCommand);
+      console.log("FFmpeg conversion completed");
 
-      const convertedExists = await RNFS.exists(outputPath);
-      if (!convertedExists) throw new Error("Converted audio file not found");
-
-      await RNFS.unlink(audioFile.path).catch(() => {});
-      data.filePath = outputPath;
+      if (!(await RNFS.exists(finalFilePath))) {
+        throw new Error("Converted audio file not found");
+      }
 
       setDownloadProgress(80); // Conversion done
     }
 
-    // Finalizing download info
+    // Clean up temp files
+    console.log("Cleaning up temp files...");
+    await RNFS.unlink(tempDir).catch(e => 
+      console.warn("Failed to delete temp folder:", e)
+    );
+
+    // Save download info
     const downloadInfo = {
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: `${uniqueId}-${Math.random().toString(36).substr(2, 9)}`,
       title: data.title,
       type: formatType,
       quality: quality,
@@ -401,40 +415,34 @@ const proceedWithDownload = async (formatType, quality) => {
       duration: videoData?.contentDetails?.duration,
       channel: videoData?.snippet?.channelTitle,
       url: downloadedUrl,
-      filePath: data.filePath || `${downloadDir}/${data.title.replace(/[^\w\s]/gi, '_')}_${Date.now()}.${formatType === 'video' ? 'mp4' : 'mp3'}`
+      filePath: finalFilePath
     };
 
     const existingDownloads = await AsyncStorage.getItem(STORAGE_KEY) || '[]';
     const downloads = JSON.parse(existingDownloads);
     downloads.unshift(downloadInfo);
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(downloads));
-    console.log("Saved to history.");
 
     setDownloadProgress(100); // Done!
+    console.log("Download completed successfully");
 
     Alert.alert(
       'Download Complete',
       `${data.title} saved successfully!`,
       [
         { text: 'OK' },
-        {
-          text: 'View History',
-          onPress: () => navigation.navigate('Playlist')
-        }
+        { text: 'View History', onPress: () => navigation.navigate('Playlist') }
       ]
     );
 
   } catch (err) {
-    console.error("Error:", err);
+    console.error("Download error:", err);
     Alert.alert(
       'Download Failed',
       err.message || 'Download could not be completed',
       [
         { text: 'OK' },
-        {
-          text: 'Retry',
-          onPress: () => proceedWithDownload(formatType, quality)
-        }
+        { text: 'Retry', onPress: () => proceedWithDownload(formatType, quality) }
       ]
     );
   } finally {

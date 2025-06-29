@@ -347,8 +347,11 @@ class YoutubeDownloader:
                     'thumbnail': info.get('thumbnail', ''),
                     'logs': self.logs[-100:],
                 }
-                return result
-
+            if not hasattr(self, 'downloaded_videos'):
+                self.downloaded_videos = []
+            self.downloaded_videos.append(result)
+            
+            return result
         except Exception as e:
             self._log(f"Download failed: {str(e)}")
             return {'error': str(e), 'logs': self.logs[-100:]}
