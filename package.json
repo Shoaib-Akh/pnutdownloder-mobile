@@ -1,13 +1,13 @@
 {
     "name": "pnutdownloader",
-    "version": "1.0.17",
+    "version": "1.0.18",
     "private": true,
     "scripts": {
         "android": "react-native run-android",
         "clean": "cd android && ./gradlew clean",
         "build": "cd android && ./gradlew build",
         "release": "npm run build-release && npm run git-tag && npm run upload-apk",
-        "build-release": "cd android && ./gradlew clean && ./gradlew assembleRelease",
+        "build-release": "cd android &&  ./gradlew assembleRelease",
         "git-tag": "git tag v$(node -p \"require('./package.json').version\") && git push origin v$(node -p \"require('./package.json').version\")",
         "upload-apk": "gh release create v$(node -p \"require('./package.json').version\") ./android/app/build/outputs/apk/release/app-release.apk --title \"Release v$(node -p \"require('./package.json').version\")\"",
         "ios": "react-native run-ios",

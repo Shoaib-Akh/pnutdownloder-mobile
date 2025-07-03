@@ -6,7 +6,8 @@ import Clipboard from '@react-native-clipboard/clipboard';
 
 const HomeScreen = ({ navigation }) => {
   const [url, setUrl] = useState('');
-
+const packageJson = require('../../../package.json');
+const APP_VERSION = packageJson.version;
   const platforms = {
     youtube: {
       icon: 'logo-youtube',
@@ -60,14 +61,16 @@ const HomeScreen = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
-        <View>
+        <View style={{width:40}}>
           <Text>
           {/* <Icon name="menu" size={30} color="#BB4F28" /> */}
 
           </Text>
         </View>
-        <Text style={styles.title}>PnutDownloader</Text>
-        <View style={{ width: 30 }} /> 
+        <Text style={styles.title}>PNUT Downloader</Text>
+       <View style={styles.versionContainer}>
+          <Text style={styles.versionText}>V{APP_VERSION}</Text>
+        </View> 
       </View>
 
       <ScrollView style={styles.container}>
@@ -134,7 +137,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 26,
+    paddingHorizontal: 18,
     backgroundColor: '#fff',
   },
   title: {
@@ -211,6 +214,17 @@ const styles = StyleSheet.create({
   platformIcon: {
     padding: 10,
     borderRadius: 10,
+  },
+   versionContainer: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  versionText: {
+    color: '#BB4F28',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 
