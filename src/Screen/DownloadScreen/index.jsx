@@ -210,6 +210,11 @@ const handleDownload = async (formatType, quality) => {
     Alert.alert('Info', 'A download is already in progress.');
     return;
   }
+    if (!downloadedUrl) {
+    console.log('Download already in progress - aborting');
+    Alert.alert( 'error','No video URL provided');
+    return;
+  }
 
   // Check if this exact download already exists
   try {
@@ -495,7 +500,7 @@ function formatSize(bytes) {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <Text style={styles.title}>YouTube Downloader</Text>
+        <Text style={styles.title}> Video Downloader</Text>
 
         {loading ? (
           <View style={styles.loadingContainer}>
@@ -503,7 +508,10 @@ function formatSize(bytes) {
             <Text style={styles.loadingText}>Loading video info...</Text>
           </View>
         ) : error ? (
+          <View style={{height:200,alignItems:"center",display:"flex",justifyContent:"center"}}>
           <Text style={styles.errorText}>{error}</Text>
+
+          </View>
         ) : videoData ? (
           <View style={styles.card}>
             <Image
