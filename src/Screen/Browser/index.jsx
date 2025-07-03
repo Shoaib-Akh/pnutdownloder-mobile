@@ -13,7 +13,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import IonIcon from 'react-native-vector-icons/Ionicons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import RNFS from 'react-native-fs';
 import CookieManager from '@react-native-cookies/cookies';
 
 const Browser = ({ route, navigation }) => {
@@ -201,10 +200,10 @@ return result;};
         {isYouTube && (
           <View style={styles.floatingButtons}>
             <TouchableOpacity
-              style={[styles.floatingButton, { backgroundColor: "#FF0000" }]}
+              style={[styles.floatingButton, { backgroundColor: "#BB4F28" }]}
               onPress={handleDownload}
             >
-              <MaterialCommunityIcons name="download" size={24} color="white" />
+              <MaterialCommunityIcons name="download" size={28} color="white" />
             </TouchableOpacity>
 
             {/* <TouchableOpacity
@@ -253,8 +252,8 @@ const styles = StyleSheet.create({
     gap: 15,
   },
   floatingButton: {
-    width: 50,
-    height: 50,
+    width: 65,
+    height: 65,
     borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',

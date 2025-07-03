@@ -8,7 +8,7 @@ import { formatDuration } from '../../../utils/formatDuration';
 
 const STORAGE_KEY = '@PNutDownloader/downloads';
 
-const PlayList = () => {
+const PlayList = ({navigation}) => {
   const [downloads, setDownloads] = useState([]);
   const [filteredDownloads, setFilteredDownloads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -83,7 +83,7 @@ const PlayList = () => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6200ee" />
+        <ActivityIndicator size="large" color="#BB4F28" />
         <Text style={styles.loadingText}>Loading download history...</Text>
       </View>
     );
@@ -91,8 +91,16 @@ const PlayList = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Download History</Text>
-      
+   <View style={styles.header}>
+        <TouchableOpacity 
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+        >
+          <Icon name="arrow-back" size={24} color="#BB4F28" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Download History</Text>
+        <View style={styles.headerSpacer} /> 
+      </View>      
       {/* Filter and Sort Controls */}
       <View style={styles.controlsContainer}>
         <View style={styles.filterButtons}>
@@ -106,14 +114,14 @@ const PlayList = () => {
             style={[styles.filterButton, contentType === 'video' && styles.activeFilter]}
             onPress={() => setContentType('video')}
           >
-            <Icon name="videocam" size={16} color={contentType === 'video' ? '#fff' : '#6200ee'} />
+            <Icon name="videocam" size={16} color={contentType === 'video' ? '#fff' : '#BB4F28'} />
             <Text style={[styles.filterButtonText, contentType === 'video' && styles.activeFilterText]}> Videos</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.filterButton, contentType === 'audio' && styles.activeFilter]}
             onPress={() => setContentType('audio')}
           >
-            <Icon name="audiotrack" size={16} color={contentType === 'audio' ? '#fff' : '#6200ee'} />
+            <Icon name="audiotrack" size={16} color={contentType === 'audio' ? '#fff' : '#BB4F28'} />
             <Text style={[styles.filterButtonText, contentType === 'audio' && styles.activeFilterText]}> Audio</Text>
           </TouchableOpacity>
         </View>
@@ -134,7 +142,7 @@ const PlayList = () => {
             <Icon 
               name={sortOrder === 'asc' ? 'arrow-upward' : 'arrow-downward'} 
               size={18} 
-              color="#6200ee" 
+              color="#BB4F28" 
             />
           </TouchableOpacity>
         </View>
@@ -195,6 +203,26 @@ const PlayList = () => {
 };
 
 const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  backButton: {
+    padding: 8,
+    marginRight: 8,
+  },
+  headerSpacer: {
+    width: 32, // Same as back button width for balance
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    flex: 1,
+    textAlign: 'center',
+  },
   container: {
     flex: 1,
     padding: 16,
@@ -253,11 +281,11 @@ const styles = StyleSheet.create({
     marginHorizontal: 2,
   },
   activeFilter: {
-    backgroundColor: '#6200ee',
+    backgroundColor: '#BB4F28',
   },
   filterButtonText: {
     fontSize: 14,
-    color: '#6200ee',
+    color: '#BB4F28',
   },
   activeFilterText: {
     color: '#fff',
@@ -271,7 +299,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   sortButtonText: {
-    color: '#6200ee',
+    color: '#BB4F28',
     fontSize: 14,
   },
   sortOrderButton: {

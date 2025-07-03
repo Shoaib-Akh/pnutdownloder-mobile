@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, ScrollView, Clipboard, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert,  } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
+import Clipboard from '@react-native-clipboard/clipboard';
 
-const HomeScreen = ({navigation}) => {
+const HomeScreen = ({ navigation }) => {
   const [url, setUrl] = useState('');
-  
+
   const platforms = {
     youtube: {
       icon: 'logo-youtube',
@@ -23,7 +24,6 @@ const HomeScreen = ({navigation}) => {
       /youtube\.com\/v\/([a-zA-Z0-9_-]+)/,
       /youtube\.com\/live\/([a-zA-Z0-9_-]+)/
     ];
-    
     return patterns.some(pattern => pattern.test(link));
   };
 
@@ -41,7 +41,6 @@ const HomeScreen = ({navigation}) => {
         Alert.alert('Clipboard is empty', 'There is nothing to paste');
       }
     } catch (error) {
-      console.error('Error pasting from clipboard:', error);
       Alert.alert('Error', 'Failed to paste from clipboard');
     }
   };
@@ -61,15 +60,17 @@ const HomeScreen = ({navigation}) => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
-        <Icon name="menu" size={30} color="#BB4F28" />
-        <Text style={styles.title}>VidCombo</Text>
-        <TouchableOpacity style={styles.upgradeBtn}>
-          <Text style={styles.upgradeText}>Upgrade ✨</Text>
-        </TouchableOpacity>
+        <View>
+          <Text>
+          {/* <Icon name="menu" size={30} color="#BB4F28" /> */}
+
+          </Text>
+        </View>
+        <Text style={styles.title}>PnutDownloader</Text>
+        <View style={{ width: 30 }} /> 
       </View>
-      
+
       <ScrollView style={styles.container}>
-        {/* Input Field */}
         <View style={styles.inputContainer}>
           <TextInput
             placeholder="Paste YouTube video URL here"
@@ -93,7 +94,6 @@ const HomeScreen = ({navigation}) => {
           <Text style={styles.pasteText}>Tap to paste YouTube link</Text>
         </TouchableOpacity>
 
-        {/* Supported Platforms */}
         <View style={styles.platformBox}>
           <Text style={styles.sectionTitle}>Supported Platforms</Text>
           <Text style={styles.sectionSubtitle}>
@@ -126,62 +126,51 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
-  container: {  
-    backgroundColor: '#fff', 
+  container: {
+    backgroundColor: '#fff',
     padding: 26,
   },
-  header: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 26,
-    paddingVertical: 15,
     backgroundColor: '#fff',
   },
-  title: { 
-    color: '#BB4F28', 
-    fontSize: 24, 
-    fontWeight: 'bold' 
+  title: {
+    color: '#BB4F28',
+    fontSize: 24,
+    fontWeight: 'bold',
   },
-  upgradeBtn: { 
-    backgroundColor: '#BB4F28', 
-    paddingHorizontal: 10, 
-    paddingVertical: 6, 
-    borderRadius: 10 
+  inputContainer: {
+    flexDirection: 'row',
+    marginTop: 20,
+    alignItems: 'center'
   },
-  upgradeText: { 
-    color: '#fff', 
-    fontWeight: 'bold' 
-  },
-  inputContainer: { 
-    flexDirection: 'row', 
-    marginTop: 20, 
-    alignItems: 'center' 
-  },
-  input: { 
-    flex: 1, 
-    backgroundColor: '#f5f5f5', 
-    color: '#333', 
-    borderRadius: 10, 
-    paddingHorizontal: 15, 
+  input: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    color: '#333',
+    borderRadius: 10,
+    paddingHorizontal: 15,
     height: 45,
     borderWidth: 1,
     borderColor: '#ddd',
   },
-  searchBtn: { 
-    marginLeft: 10, 
-    backgroundColor: '#BB4F28', 
-    borderRadius: 10, 
+  searchBtn: {
+    marginLeft: 10,
+    backgroundColor: '#BB4F28',
+    borderRadius: 10,
     padding: 10,
     height: 45,
     justifyContent: 'center',
     alignItems: 'center',
     width: 45,
   },
-  orText: { 
-    color: '#aaa', 
-    textAlign: 'center', 
-    marginVertical: 12 
+  orText: {
+    color: '#aaa',
+    textAlign: 'center',
+    marginVertical: 12
   },
   pasteBtn: {
     flexDirection: 'row',
@@ -191,37 +180,36 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
   },
-  pasteText: { 
-    color: '#fff', 
+  pasteText: {
+    color: '#fff',
     marginLeft: 8,
     fontWeight: '500',
   },
-  platformBox: { 
-    backgroundColor: '#f9f9f9', 
-    borderRadius: 12, 
-    padding: 16, 
+  platformBox: {
+    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
+    padding: 16,
     marginTop: 20,
     borderWidth: 1,
     borderColor: '#eee',
   },
-  sectionTitle: { 
-    color: '#BB4F28', 
-    fontSize: 18, 
-    fontWeight: 'bold' 
+  sectionTitle: {
+    color: '#BB4F28',
+    fontSize: 18,
+    fontWeight: 'bold'
   },
-  sectionSubtitle: { 
-    color: '#666', 
+  sectionSubtitle: {
+    color: '#666',
     marginTop: 6,
     fontSize: 12,
   },
-  platforms: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-around', 
-    marginTop: 16 
+  platforms: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 16
   },
-  platformIcon: { 
-    backgroundColor: '#BB4F28', 
-    padding: 10, 
+  platformIcon: {
+    padding: 10,
     borderRadius: 10,
   },
 });

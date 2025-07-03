@@ -23,7 +23,7 @@ const AppTheme = {
   ...NavigationTheme,
   colors: {
     ...NavigationTheme.colors,
-    primary: '#6200EE',
+    primary: '#BB4F28',
     background: '#FFFFFF',
     card: '#FFFFFF',
     text: '#333333',

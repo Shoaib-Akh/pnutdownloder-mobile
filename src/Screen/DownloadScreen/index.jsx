@@ -713,7 +713,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   downloadButton: {
-    backgroundColor: '#4285f4',
+    backgroundColor: '#BB4F28',
   },
   premiumButton: {
     backgroundColor: '#ff5722',
